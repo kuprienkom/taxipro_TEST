@@ -33,6 +33,15 @@
   .appbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
   .car-chip{background:var(--panel);border:1px solid rgba(255,255,255,.08);color:var(--text);font-size:12px;padding:6px 8px;border-radius:10px;cursor:pointer}
   .content{padding:12px 12px 90px;flex:1}
+/* --- Контейнер с контентом, скроллится только он --- */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 12px calc(90px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
   .top-controls{display:flex;gap:8px;align-items:center;margin-bottom:12px}
   .tabs{display:flex;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px;overflow:hidden}
   .tab{padding:8px 10px;color:var(--muted);cursor:pointer;user-select:none}
