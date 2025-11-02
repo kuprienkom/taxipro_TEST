@@ -847,7 +847,7 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
  // Первый рендер
  render();
 
- // ==== Telegram Mini App init (устойчивый вариант) ====
+  // ==== Telegram Mini App init (устойчивый вариант) ====
  (function initTelegram() {
    try {
      if (window.Telegram && Telegram.WebApp) {
@@ -856,7 +856,6 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
        if (Telegram.WebApp.disableVerticalSwipes) {
          Telegram.WebApp.disableVerticalSwipes();
        }
-       // Совместимость старого/нового API подтверждения закрытия
        if (Telegram.WebApp.enableClosingConfirmation) {
          Telegram.WebApp.enableClosingConfirmation();
        } else {
@@ -870,3 +869,18 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
      console.error('[TaxiPro] Telegram init error:', e);
    }
  })();
+
+// --- FIX: минимизация реакции Telegram WebView на свайп вверх ---
+if (window.Telegram && window.Telegram.WebApp) {
+  const tg = window.Telegram.WebApp;
+  tg.expand(); // удерживаем окно в раскрытом состоянии
+
+  // если Telegram попытается свернуть окно при свайпе вверх — разворачиваем обратно
+  if (tg.onEvent) {
+    tg.onEvent('viewportChanged', (data) => {
+      if (data && data.isExpanded === false) {
+        tg.expand();
+      }
+    });
+  }
+}
