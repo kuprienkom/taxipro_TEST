@@ -1,20 +1,9 @@
 {
-  "name": "Taxi Pro",
+  "name": "TaxiPro — Анализатор Такси",
   "short_name": "TaxiPro",
-  "start_url": "https://kuprienkom.github.io/taxi-pro/",
+  "start_url": ".",
   "display": "standalone",
-  "theme_color": "#FFD43B",
+  "theme_color": "#111111",
   "background_color": "#111111",
-  "icons": [
-    {
-      "src": "https://kuprienkom.github.io/taxi-pro/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "https://kuprienkom.github.io/taxi-pro/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
+  "lang": "ru"
 }
