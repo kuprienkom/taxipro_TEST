@@ -855,26 +855,44 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
  // Первый рендер
  render();
 
- // ==== Telegram Mini App init (устойчивый вариант) ====
- (function initTelegram() {
-   try {
-     if (window.Telegram && Telegram.WebApp) {
-       Telegram.WebApp.ready();
-       Telegram.WebApp.expand();
-       if (Telegram.WebApp.disableVerticalSwipes) {
-         Telegram.WebApp.disableVerticalSwipes();
-       }
-       // Совместимость старого/нового API подтверждения закрытия
-       if (Telegram.WebApp.enableClosingConfirmation) {
-         Telegram.WebApp.enableClosingConfirmation();
-       } else {
-         Telegram.WebApp.isClosingConfirmationEnabled = true;
-       }
-       console.log('[TaxiPro] Telegram WebApp initialized');
-     } else {
-       console.warn('[TaxiPro] Telegram WebApp не обнаружен');
-     }
-   } catch (e) {
-     console.error('[TaxiPro] Telegram init error:', e);
-   }
- })();
+// ==== Telegram Mini App init (устойчивый вариант) ====
+(function initTelegram() {
+  try {
+    if (window.Telegram && Telegram.WebApp) {
+      Telegram.WebApp.ready();
+      Telegram.WebApp.expand();
+      if (Telegram.WebApp.disableVerticalSwipes) {
+        Telegram.WebApp.disableVerticalSwipes();
+      }
+      // Совместимость старого/нового API подтверждения закрытия
+      if (Telegram.WebApp.enableClosingConfirmation) {
+        Telegram.WebApp.enableClosingConfirmation();
+      } else {
+        Telegram.WebApp.isClosingConfirmationEnabled = true;
+      }
+      console.log('[TaxiPro] Telegram WebApp initialized');
+    } else {
+      console.warn('[TaxiPro] Telegram WebApp не обнаружен');
+    }
+  } catch (e) {
+    console.error('[TaxiPro] Telegram init error:', e);
+  }
+})();
+// --- FIX: блокируем системный свайп вниз в Telegram WebView ---
+let startY = 0;
+window.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    startY = e.touches[0].clientY;
+  }
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+  const currentY = e.touches[0].clientY;
+  const deltaY = currentY - startY;
+
+  // если пользователь тянет вниз от верхней границы — блокируем
+  if (deltaY > 10 && window.scrollY === 0) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
