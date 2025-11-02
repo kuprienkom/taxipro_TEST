@@ -1,11 +1,11 @@
-// --- FIX: предотвращаем "сворачивание" Telegram Mini App при скролле ---
-function setViewportHeight() {
-  const vh = window.innerHeight * 0.01;
-  document.documentElement.style.setProperty('--vh', `${vh}px`);
+// --- FIX: отключаем сворачивание Telegram Mini App при свайпе вниз ---
+if (window.Telegram && window.Telegram.WebApp) {
+  const tg = window.Telegram.WebApp;
+  tg.expand(); // раскрывает окно на максимум
+  if (typeof tg.disableVerticalSwipes === "function") {
+    tg.disableVerticalSwipes(true); // запрещаем свайп вниз для закрытия
+  }
 }
-window.addEventListener('resize', setViewportHeight);
-window.addEventListener('orientationchange', setViewportHeight);
-setViewportHeight();
 
 /* ========= Утилиты ========= */
 const fmt = (n) => (Math.round(n)).toLocaleString('ru-RU');
