@@ -1,3 +1,11 @@
+// --- FIX: предотвращаем "сворачивание" Telegram Mini App при скролле ---
+function setViewportHeight() {
+  const vh = window.innerHeight * 0.01;
+  document.documentElement.style.setProperty('--vh', `${vh}px`);
+}
+window.addEventListener('resize', setViewportHeight);
+window.addEventListener('orientationchange', setViewportHeight);
+setViewportHeight();
 
 /* ========= Утилиты ========= */
 const fmt = (n) => (Math.round(n)).toLocaleString('ru-RU');
