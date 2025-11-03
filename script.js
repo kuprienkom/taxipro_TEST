@@ -11,7 +11,10 @@ const isoToShort = (iso)=>{const d=new Date(iso);return d.toLocaleDateString('ru
 {
   activeCarId: string,
   cars: [{id,name,cls,tank}],
-  settings: { parkMode:'none'|'150day'|'15order'|'20order'|'4pct', taxMode:'none'|'self4'|'ip6' },
+  settings: {
+    park: { mode:'none'|'day'|'order'|'percent', dayFee, perOrder, percent },
+    taxMode:'none'|'self4'|'ip6'
+  },
   dataByCar: {
     [carId]: { [dateISO]: {orders,income,rent,fuel,tips,otherIncome,otherExpense,fines,hours} }
   }
@@ -79,7 +82,10 @@ function loadAll() {
   const obj = {
     activeCarId: carId,
     cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50 }],
-    settings: { parkMode: '150day', taxMode: 'none' },
+    settings: {
+      park: { mode: 'day', dayFee: 150, perOrder: 15, percent: 4 },
+      taxMode: 'none'
+    },
     dataByCar: { [carId]: seedData }
   };
 
@@ -92,8 +98,63 @@ function saveAll() {
 }
 
 
+function normalizeApp(app){
+  app.settings = app.settings || {};
+
+  const defaultsPark = { mode: 'none', dayFee: 150, perOrder: 15, percent: 4 };
+
+  if (!app.settings.park) {
+    if (app.settings.parkMode) {
+      const map = {
+        none: 'none',
+        '150day': 'day',
+        '15order': 'order',
+        '20order': 'order',
+        '4pct': 'percent'
+      };
+      const legacyMode = app.settings.parkMode;
+      const perOrder = legacyMode === '20order' ? 20 : legacyMode === '15order' ? 15 : defaultsPark.perOrder;
+      app.settings.park = { ...defaultsPark, mode: map[legacyMode] || 'none', perOrder };
+    } else {
+      app.settings.park = { ...defaultsPark };
+    }
+  } else {
+    app.settings.park = { ...defaultsPark, ...app.settings.park };
+  }
+
+  const park = app.settings.park;
+
+  if (park.mode === 'orderRegion' || park.mode === 'orderCapital') {
+    const raw = park.mode === 'orderCapital' ? park.orderCapital : park.orderRegion;
+    const legacyVal = Number(raw);
+    park.mode = 'order';
+    if (Number.isFinite(legacyVal) && legacyVal > 0) {
+      park.perOrder = legacyVal;
+    }
+  }
+
+  if (park.perOrder == null) {
+    const fromRegion = Number(park.orderRegion);
+    const fromCapital = Number(park.orderCapital);
+    if (Number.isFinite(fromRegion) && fromRegion > 0) park.perOrder = fromRegion;
+    else if (Number.isFinite(fromCapital) && fromCapital > 0) park.perOrder = fromCapital;
+  }
+
+  park.dayFee = Math.max(0, Number(park.dayFee) || 0);
+  park.perOrder = Math.max(0, Number(park.perOrder) || 0);
+  park.percent = Math.max(0, Number(park.percent) || 0);
+
+  delete park.orderRegion;
+  delete park.orderCapital;
+
+  app.settings.taxMode = app.settings.taxMode || 'none';
+  delete app.settings.parkMode;
+
+  return app;
+}
+
 /* ========= State ========= */
-let APP = loadAll();
+let APP = normalizeApp(loadAll());
 
 let currentScreen='home';
 let currentPeriod='day';
@@ -154,41 +215,126 @@ const btnSave=document.getElementById('btnSave');
 let editField=null;
 
 const QUICK_PRESETS = {
-  income: [1000,3000,5000],
-  otherIncome: [500,1000,2000],
-  tips: [50,100,200],
-  rent: [500,1000,1500],
-  fuel: [100,500,1000],
-  otherExpense: [100,300,500],
-  fines: [500,1000,3000],
-  orders: [1,5,10],
-  hours: [1,2,4]
+  income: { values: [1000,3000,5000], type: 'currency' },
+  otherIncome: { values: [500,1000,2000], type: 'currency' },
+  tips: { values: [50,100,200], type: 'currency' },
+  rent: { values: [500,1000,1500], type: 'currency' },
+  fuel: { values: [100,500,1000], type: 'currency' },
+  otherExpense: { values: [100,300,500], type: 'currency' },
+  fines: { values: [500,1000,3000], type: 'currency' },
+  orders: { values: [1,5,10], type: 'plain' },
+  hours: { values: [1,2,4], type: 'plain' },
+  parkDay: { values: [500,1000,1500], type: 'currency' },
+  parkOrder: { values: [1,5,10], type: 'currency' },
+  parkPercent: { values: [0.5,1,2], type: 'percent' }
 };
 
-function renderQuick(field){
+const PARK_EDIT_CONFIG = {
+  dayFee: { type: 'park', key: 'dayFee', title: 'Аренда за смену', quickKey: 'parkDay', step: '10', decimals: 0 },
+  perOrder: { type: 'park', key: 'perOrder', title: 'Комиссия за заказ', quickKey: 'parkOrder', step: '1', decimals: 0 },
+  percent: { type: 'park', key: 'percent', title: 'Процент с дохода', quickKey: 'parkPercent', step: '0.1', decimals: 1, allowFloat: true }
+};
+
+function renderQuick(config){
   quickArea.innerHTML = '';
-  (QUICK_PRESETS[field]||[]).forEach(val=>{
+  const quickKey = config.quickKey || config.key;
+  const preset = QUICK_PRESETS[quickKey];
+  if (!preset) return;
+
+  const decimals = config.decimals != null ? config.decimals : (preset.type === 'percent' ? 1 : 0);
+  const factor = Math.pow(10, decimals);
+
+  preset.values.forEach(val => {
     const chip=document.createElement('div');
     chip.className='chip';
-    chip.textContent = field==='orders'||field==='hours' ? `+${val}` : `+${val} ₽`;
-    chip.onclick=()=>{ modalInput.value = Number(modalInput.value||0) + val; };
+    let label = '';
+    if (preset.type === 'currency') label = `+${rub(val)}`;
+    else if (preset.type === 'percent') {
+      const perc = val.toLocaleString('ru-RU', {
+        minimumFractionDigits: decimals > 0 && !Number.isInteger(val) ? decimals : 0,
+        maximumFractionDigits: decimals
+      });
+      label = `+${perc}%`;
+    }
+    else label = `+${val}`;
+    chip.textContent = label;
+    chip.onclick=()=>{
+      const raw = config.allowFloat ? parseFloat(modalInput.value) : Number(modalInput.value);
+      const current = Number.isFinite(raw) ? raw : 0;
+      const next = current + val;
+      if (decimals > 0) {
+        modalInput.value = (Math.round(next * factor) / factor).toString();
+      } else {
+        modalInput.value = String(Math.round(next));
+      }
+    };
     quickArea.appendChild(chip);
   });
 }
 function openModal(field,title){
-  editField=field; modalTitle.textContent=title; modalLabel.textContent='Введите значение';
-  modalInput.value = Number(ensureDay(currentDate)[field]||0);
-  renderQuick(field);
-  modalBg.classList.add('show'); modalInput.focus();
+  if (typeof field === 'string') {
+    editField = { type: 'day', key: field, quickKey: field, decimals: 0 };
+  } else {
+    editField = { decimals: 0, ...field };
+  }
+  const config = editField;
+  modalTitle.textContent=title;
+  modalLabel.textContent=config.label || 'Введите значение';
+  modalInput.min = config.min != null ? String(config.min) : '0';
+  modalInput.step = config.step || (config.allowFloat ? '0.1' : '1');
+
+  let value = 0;
+  if (config.type === 'park') {
+    value = Number(APP.settings.park?.[config.key] ?? 0);
+  } else {
+    value = Number(ensureDay(currentDate)[config.key] || 0);
+  }
+
+  if (!config.allowFloat) value = Math.round(value);
+  if (config.decimals && config.decimals > 0) {
+    const factor = Math.pow(10, config.decimals);
+    value = Math.round(value * factor) / factor;
+  }
+
+  modalInput.value = Number.isFinite(value) ? String(value) : '0';
+  modalInput.placeholder = '0';
+  renderQuick(config);
+  modalBg.classList.add('show');
+  setTimeout(()=>{ modalInput.focus(); modalInput.select(); }, 0);
 }
 function closeModal(){ modalBg.classList.remove('show'); editField=null; }
 btnCancel.onclick=closeModal;
 modalBg.addEventListener('click',e=>{ if(e.target===modalBg) closeModal(); });
 btnSave.onclick=()=>{
   if(!editField) return;
-  const v = Number(modalInput.value||0);
-  ensureDay(currentDate)[editField]=v;
-  saveAll(); closeModal(); render();
+  const config = editField;
+  const raw = config.allowFloat ? parseFloat(modalInput.value) : Number(modalInput.value);
+  let num = Number.isFinite(raw) ? raw : 0;
+  const min = config.min != null ? config.min : 0;
+  if (config.decimals && config.decimals > 0) {
+    const factor = Math.pow(10, config.decimals);
+    num = Math.round(num * factor) / factor;
+  }
+  if (!config.allowFloat) num = Math.round(num);
+  if (num < min) num = min;
+
+  if (config.type === 'park') {
+    const park = APP.settings.park || (APP.settings.park = {});
+    park[config.key] = num;
+    if (config.key === 'perOrder') {
+      park.perOrder = num;
+    }
+    saveAll();
+    closeModal();
+    render();
+    return;
+  }
+
+  const targetDay = ensureDay(currentDate);
+  targetDay[config.key] = num;
+  saveAll();
+  closeModal();
+  render();
 };
 
 /* ========= Car Edit Modal ========= */
@@ -273,10 +419,58 @@ addCarBtn.onclick=()=>{
 
 /* ========= Settings (commission & tax) ========= */
 function bindSettingsRadios(){
+  const park = APP.settings.park || (APP.settings.park = { mode: 'none', dayFee: 150, perOrder: 15, percent: 4 });
+
   document.querySelectorAll('input[name="park"]').forEach(r=>{
-    r.checked = (APP.settings.parkMode===r.value);
-    r.onchange = ()=>{ APP.settings.parkMode=r.value; saveAll(); render(); };
+    r.checked = (park.mode===r.value);
+    r.onchange = ()=>{ park.mode=r.value; saveAll(); render(); };
   });
+
+  const dayLabel = document.getElementById('parkDayLabel');
+  if (dayLabel) {
+    dayLabel.textContent = `${rub(park.dayFee)} за рабочие сутки`;
+  }
+
+  const orderLabel = document.getElementById('parkOrderLabel');
+  if (orderLabel) {
+    orderLabel.textContent = `${rub(park.perOrder)} с заказа (регионы/МСК)`;
+  }
+
+  const percentLabel = document.getElementById('parkPercentLabel');
+  if (percentLabel) {
+    const raw = Number(park.percent) || 0;
+    const normalized = Math.round(raw * 10) / 10;
+    const percentText = Number.isFinite(normalized)
+      ? normalized.toLocaleString('ru-RU', {
+          minimumFractionDigits: Number.isInteger(normalized) ? 0 : 1,
+          maximumFractionDigits: 1
+        })
+      : '0';
+    percentLabel.textContent = `${percentText}% с дохода`;
+  }
+
+  document.querySelectorAll('.park-row').forEach(row => {
+    const mode = row.dataset.mode;
+    if (mode) {
+      row.classList.toggle('active', park.mode === mode);
+    }
+    if (!row.dataset.bound) {
+      row.dataset.bound = '1';
+      row.addEventListener('click', () => {
+        const radio = row.querySelector('input[type="radio"]');
+        if (radio) {
+          radio.checked = true;
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        const editKey = row.dataset.edit;
+        if (!editKey) return;
+        const cfg = PARK_EDIT_CONFIG[editKey];
+        if (!cfg) return;
+        setTimeout(()=>openModal({ ...cfg }, cfg.title), 0);
+      });
+    }
+  });
+
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
     r.checked = (APP.settings.taxMode===r.value);
     r.onchange = ()=>{ APP.settings.taxMode=r.value; saveAll(); render(); };
@@ -287,7 +481,7 @@ function bindSettingsRadios(){
 
     // Подождём, чтобы гарантированно очистилось, и создадим seed-данные заново
    setTimeout(() => {
-  APP = loadAll();   // создаём демо данные
+  APP = normalizeApp(loadAll());   // создаём демо данные
   saveAll();
 
   // выставляем дату последнего дня демо, чтобы график не был пуст
@@ -306,14 +500,14 @@ function bindSettingsRadios(){
 
 /* ========= Calculations ========= */
 function calcCommission(d){ // парк
-  const mode = APP.settings.parkMode || 'none';
+  const park = APP.settings.park || {};
+  const mode = park.mode || 'none';
   if(mode==='none') return 0;
-  if(mode==='150day'){
-    return ( (d.income||0) > 0 || (d.orders||0) > 0 ) ? 150 : 0;
+  if(mode==='day'){
+    return ((d.income||0) > 0 || (d.orders||0) > 0) ? park.dayFee : 0;
   }
-  if(mode==='15order'){ return (d.orders||0) * 15; }
-  if(mode==='20order'){ return (d.orders||0) * 20; }
-  if(mode==='4pct'){ return (d.income||0) * 0.04; } // с дохода (без чаевых/прочих доходов)
+  if(mode==='order'){ return (d.orders||0) * park.perOrder; }
+  if(mode==='percent'){ return (d.income||0) * (park.percent/100); } // с дохода (без чаевых/прочих доходов)
   return 0;
 }
 function calcTax(d){
