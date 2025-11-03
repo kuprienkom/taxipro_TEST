@@ -847,33 +847,99 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
  // Первый рендер
  render();
 
- // ==== Telegram Mini App init (устойчивый вариант) ====
- (function initTelegram() {
-   try {
-     if (window.Telegram && Telegram.WebApp) {
-       Telegram.WebApp.ready();
-       Telegram.WebApp.expand();
-       if (Telegram.WebApp.disableVerticalSwipes) {
-         Telegram.WebApp.disableVerticalSwipes();
-       }
-       if (Telegram.WebApp.onEvent) {
-         Telegram.WebApp.onEvent('viewportChanged', (state = {}) => {
-           if (state.isExpanded === false) {
-             Telegram.WebApp.expand();
-           }
-         });
-       }
-       // Совместимость старого/нового API подтверждения закрытия
-       if (Telegram.WebApp.enableClosingConfirmation) {
-         Telegram.WebApp.enableClosingConfirmation();
-       } else {
-         Telegram.WebApp.isClosingConfirmationEnabled = true;
-       }
-       console.log('[TaxiPro] Telegram WebApp initialized');
-     } else {
-       console.warn('[TaxiPro] Telegram WebApp не обнаружен');
-     }
-   } catch (e) {
-     console.error('[TaxiPro] Telegram init error:', e);
-   }
- })();
+// ==== Телеграм-специфика и защита от свайпов ====
+(function initTelegram() {
+  const enforceExpand = () => {
+    try { Telegram.WebApp.expand(); } catch (e) {}
+  };
+
+  try {
+    if (window.Telegram && Telegram.WebApp) {
+      Telegram.WebApp.ready();
+      enforceExpand();
+
+      if (Telegram.WebApp.disableVerticalSwipes) {
+        Telegram.WebApp.disableVerticalSwipes();
+      }
+
+      if (Telegram.WebApp.setClosingBehavior) {
+        Telegram.WebApp.setClosingBehavior({ need_confirmation: true });
+      } else if (Telegram.WebApp.enableClosingConfirmation) {
+        Telegram.WebApp.enableClosingConfirmation();
+      } else {
+        Telegram.WebApp.isClosingConfirmationEnabled = true;
+      }
+
+      if (Telegram.WebApp.onEvent) {
+        Telegram.WebApp.onEvent('viewportChanged', (state = {}) => {
+          const collapsed = state.isExpanded === false;
+          const heightShrunk = typeof state.height === 'number'
+            && Telegram.WebApp.viewportStableHeight
+            && state.height + 2 < Telegram.WebApp.viewportStableHeight;
+          if (collapsed || heightShrunk) {
+            enforceExpand();
+            setTimeout(enforceExpand, 120);
+          }
+        });
+      }
+
+      // На всякий случай периодически переоткрываем полноэкранный режим при старте
+      setTimeout(enforceExpand, 150);
+      setTimeout(enforceExpand, 600);
+
+      console.log('[TaxiPro] Telegram WebApp initialized');
+    } else {
+      console.warn('[TaxiPro] Telegram WebApp не обнаружен');
+    }
+  } catch (e) {
+    console.error('[TaxiPro] Telegram init error:', e);
+  }
+})();
+
+// Блокируем «bounce» на iOS, из-за которого окно можно свернуть свайпом
+function lockBounceScroll(el) {
+  if (!el || el.dataset.bounceLock) return;
+  el.dataset.bounceLock = '1';
+
+  let startY = 0;
+
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  el.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 1) return;
+    const currentY = e.touches[0].clientY;
+    const delta = currentY - startY;
+    const atTop = el.scrollTop <= 0;
+    const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+
+    if ((atTop && delta > 0) || (atBottom && delta < 0)) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+}
+
+const SCROLL_LOCK_SELECTOR = '.content, .modal .body, [data-scroll-lock]';
+
+function applyBounceLocks(root = document) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  root.querySelectorAll(SCROLL_LOCK_SELECTOR).forEach(lockBounceScroll);
+}
+
+applyBounceLocks();
+
+const bounceObserver = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    mutation.addedNodes.forEach((node) => {
+      if (!(node instanceof HTMLElement)) return;
+      if (node.matches && node.matches(SCROLL_LOCK_SELECTOR)) {
+        lockBounceScroll(node);
+      }
+      applyBounceLocks(node);
+    });
+  });
+});
+
+bounceObserver.observe(document.body, { childList: true, subtree: true });
