@@ -896,74 +896,90 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
   }
 })();
 
-// Блокируем «bounce» на iOS, из-за которого окно можно свернуть свайпом
-function lockBounceScroll(el) {
-  if (!el || el.dataset.bounceLock) return;
-  el.dataset.bounceLock = '1';
+// Глобальная защита от iOS bounce: ищем вертикально скроллируемые элементы и
+// разрешаем обычный скролл только внутри них, блокируя «сворачивание» мини-апки
+const touchState = new Map();
 
-  let startY = 0;
-  let startX = 0;
-
-  const handleTouchStart = (e) => {
-    if (e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    startY = touch.clientY;
-    startX = touch.clientX;
-
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    if (maxScroll <= 0) return;
-
-    if (el.scrollTop <= 0) {
-      el.scrollTop = 1;
-    } else if (el.scrollTop >= maxScroll) {
-      el.scrollTop = maxScroll - 1;
+const getScrollableParent = (startEl) => {
+  let el = startEl instanceof Element ? startEl : null;
+  while (el && el !== document.body) {
+    if (el instanceof HTMLElement) {
+      const style = window.getComputedStyle(el);
+      const canScroll = /(auto|scroll)/.test(style.overflowY);
+      if (canScroll && el.scrollHeight - el.clientHeight > 2) {
+        return el;
+      }
     }
-  };
+    el = el.parentElement;
+  }
+  return null;
+};
 
-  const handleTouchMove = (e) => {
-    if (e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    const dy = touch.clientY - startY;
-    const dx = touch.clientX - startX;
+const rememberTouches = (event) => {
+  Array.from(event.changedTouches || []).forEach((touch) => {
+    const scrollable = getScrollableParent(touch.target);
+    if (scrollable && scrollable.scrollHeight > scrollable.clientHeight) {
+      if (scrollable.scrollTop <= 0) {
+        scrollable.scrollTop = 1;
+      } else if (scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight) {
+        const target = scrollable.scrollHeight - scrollable.clientHeight - 1;
+        scrollable.scrollTop = Math.max(0, target);
+      }
+    }
+    touchState.set(touch.identifier, {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      scrollable,
+    });
+  });
+};
+
+const cleanupTouches = (event) => {
+  Array.from(event.changedTouches || []).forEach((touch) => {
+    touchState.delete(touch.identifier);
+  });
+};
+
+document.addEventListener('touchstart', rememberTouches, { passive: true });
+document.addEventListener('touchcancel', cleanupTouches, { passive: true });
+document.addEventListener('touchend', cleanupTouches, { passive: true });
+
+document.addEventListener('touchmove', (event) => {
+  let shouldPrevent = false;
+
+  Array.from(event.changedTouches || []).forEach((touch) => {
+    const state = touchState.get(touch.identifier);
+    if (!state) return;
+
+    const dx = touch.clientX - state.startX;
+    const dy = touch.clientY - state.startY;
 
     if (Math.abs(dx) > Math.abs(dy)) {
       return; // горизонтальный жест — пропускаем
     }
 
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    if (maxScroll <= 0) {
-      if (e.cancelable) e.preventDefault();
+    const scrollable = state.scrollable;
+    if (!scrollable) {
+      shouldPrevent = true;
       return;
     }
 
-    if ((dy > 0 && el.scrollTop <= 0) || (dy < 0 && el.scrollTop >= maxScroll)) {
-      if (e.cancelable) e.preventDefault();
+    const maxScroll = scrollable.scrollHeight - scrollable.clientHeight;
+    if (maxScroll <= 0) {
+      shouldPrevent = true;
+      return;
     }
-  };
 
-  el.addEventListener('touchstart', handleTouchStart, { passive: true });
-  el.addEventListener('touchmove', handleTouchMove, { passive: false });
-}
+    const atTop = scrollable.scrollTop <= 0;
+    const atBottom = scrollable.scrollTop >= maxScroll;
 
-const SCROLL_LOCK_SELECTOR = '.content, .modal .body, [data-scroll-lock]';
-
-function applyBounceLocks(root = document) {
-  if (!root || typeof root.querySelectorAll !== 'function') return;
-  root.querySelectorAll(SCROLL_LOCK_SELECTOR).forEach(lockBounceScroll);
-}
-
-applyBounceLocks();
-
-const bounceObserver = new MutationObserver((mutations) => {
-  mutations.forEach((mutation) => {
-    mutation.addedNodes.forEach((node) => {
-      if (!(node instanceof HTMLElement)) return;
-      if (node.matches && node.matches(SCROLL_LOCK_SELECTOR)) {
-        lockBounceScroll(node);
-      }
-      applyBounceLocks(node);
-    });
+    if ((dy > 0 && atTop) || (dy < 0 && atBottom)) {
+      scrollable.scrollTop = Math.max(0, Math.min(scrollable.scrollTop, maxScroll));
+      shouldPrevent = true;
+    }
   });
-});
 
-bounceObserver.observe(document.body, { childList: true, subtree: true });
+  if (shouldPrevent && event.cancelable) {
+    event.preventDefault();
+  }
+}, { passive: false });
