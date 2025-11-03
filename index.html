@@ -110,11 +110,21 @@
 </div>
 <div class="section">Система комиссий парка</div>
 <div class="list">
-<div class="row"><label class="radio"><input name="park" type="radio" value="none"/> <span>Без парка / Без комиссии</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="150day"/> <span>150 ₽ за рабочие сутки</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="15order"/> <span>15 ₽ с заказа (регионы)</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="20order"/> <span>20 ₽ с заказа (МСК/СПб)</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="4pct"/> <span>4% с дохода</span></label></div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="none"/> <span>Без парка / Без комиссии</span></label>
+        </div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="day"/> <span>Фикс за смену</span></label>
+          <div class="option-input"><input id="parkDayValue" min="0" step="10" type="number"/> <span>₽ за рабочие сутки</span></div>
+        </div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="order"/> <span>С заказа</span></label>
+          <div class="option-input"><input id="parkOrderValue" min="0" step="1" type="number"/> <span>₽ за заказ</span></div>
+        </div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="percent"/> <span>Процент с дохода</span></label>
+          <div class="option-input"><input id="parkPercentValue" min="0" step="0.1" type="number"/> <span>% с дохода</span></div>
+        </div>
 </div>
 <div class="section">Налогообложение</div>
 <div class="list">

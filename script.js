@@ -11,7 +11,10 @@ const isoToShort = (iso)=>{const d=new Date(iso);return d.toLocaleDateString('ru
 {
   activeCarId: string,
   cars: [{id,name,cls,tank}],
-  settings: { parkMode:'none'|'150day'|'15order'|'20order'|'4pct', taxMode:'none'|'self4'|'ip6' },
+  settings: {
+    park: { mode:'none'|'day'|'order'|'percent', dayFee, orderFee, percent },
+    taxMode:'none'|'self4'|'ip6'
+  },
   dataByCar: {
     [carId]: { [dateISO]: {orders,income,rent,fuel,tips,otherIncome,otherExpense,fines,hours} }
   }
@@ -79,7 +82,10 @@ function loadAll() {
   const obj = {
     activeCarId: carId,
     cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50 }],
-    settings: { parkMode: '150day', taxMode: 'none' },
+    settings: {
+      park: { mode: 'day', dayFee: 150, orderFee: 15, percent: 4 },
+      taxMode: 'none'
+    },
     dataByCar: { [carId]: seedData }
   };
 
@@ -92,8 +98,57 @@ function saveAll() {
 }
 
 
+function normalizeApp(app){
+  app.settings = app.settings || {};
+
+  const defaultsPark = { mode: 'none', dayFee: 150, orderFee: 15, percent: 4 };
+  const legacyMap = {
+    none: 'none',
+    '150day': 'day',
+    '15order': 'order',
+    '20order': 'order',
+    '4pct': 'percent'
+  };
+  const toFinite = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const incomingPark = app.settings.park || {};
+  const fromLegacyMode = app.settings.parkMode ? legacyMap[app.settings.parkMode] : undefined;
+  let mode = incomingPark.mode || fromLegacyMode || defaultsPark.mode;
+  if (mode === 'orderRegion' || mode === 'orderCapital') mode = 'order';
+  if (!['none','day','order','percent'].includes(mode)) mode = 'none';
+
+  let orderFee = toFinite(incomingPark.orderFee);
+  if (orderFee === null) {
+    if (incomingPark.mode === 'orderCapital') {
+      orderFee = toFinite(incomingPark.orderCapital);
+    } else if (incomingPark.mode === 'orderRegion') {
+      orderFee = toFinite(incomingPark.orderRegion);
+    }
+  }
+  if (orderFee === null) orderFee = toFinite(incomingPark.orderRegion);
+  if (orderFee === null) orderFee = toFinite(incomingPark.orderCapital);
+  if (orderFee === null && fromLegacyMode === 'order') {
+    orderFee = app.settings.parkMode === '20order' ? 20 : 15;
+  }
+  if (orderFee === null) orderFee = defaultsPark.orderFee;
+  orderFee = Math.max(0, orderFee);
+
+  const dayFee = Math.max(0, toFinite(incomingPark.dayFee) ?? defaultsPark.dayFee);
+  const percent = Math.max(0, toFinite(incomingPark.percent) ?? defaultsPark.percent);
+
+  app.settings.park = { mode, dayFee, orderFee, percent };
+
+  app.settings.taxMode = app.settings.taxMode || 'none';
+  delete app.settings.parkMode;
+
+  return app;
+}
+
 /* ========= State ========= */
-let APP = loadAll();
+let APP = normalizeApp(loadAll());
 
 let currentScreen='home';
 let currentPeriod='day';
@@ -142,6 +197,10 @@ const rentPctEl=document.getElementById('rentPct');
 const fuelPctEl=document.getElementById('fuelPct');
 
 const reportsBody=document.getElementById('reportsBody');
+
+const parkDayInput = document.getElementById('parkDayValue');
+const parkOrderInput = document.getElementById('parkOrderValue');
+const parkPercentInput = document.getElementById('parkPercentValue');
 
 /* ========= Modal (edit values) ========= */
 const modalBg = document.getElementById('modalBg');
@@ -273,10 +332,31 @@ addCarBtn.onclick=()=>{
 
 /* ========= Settings (commission & tax) ========= */
 function bindSettingsRadios(){
+  const park = APP.settings.park;
   document.querySelectorAll('input[name="park"]').forEach(r=>{
-    r.checked = (APP.settings.parkMode===r.value);
-    r.onchange = ()=>{ APP.settings.parkMode=r.value; saveAll(); render(); };
+    r.checked = (park.mode===r.value);
+    r.onchange = ()=>{ park.mode=r.value; saveAll(); render(); };
   });
+
+  const bindParkInput = (input, key, isPercent=false) => {
+    if(!input) return;
+    const value = park[key];
+    input.value = isPercent ? Number(value).toString() : Math.round(Number(value)||0);
+    input.onchange = ()=>{
+      const raw = input.value;
+      const num = isPercent ? parseFloat(raw) : Math.round(Number(raw));
+      const safe = Number.isFinite(num) ? Math.max(0, num) : 0;
+      park[key] = safe;
+      input.value = isPercent ? safe : Math.round(safe);
+      saveAll();
+      render();
+    };
+  };
+
+  bindParkInput(parkDayInput, 'dayFee');
+  bindParkInput(parkOrderInput, 'orderFee');
+  bindParkInput(parkPercentInput, 'percent', true);
+
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
     r.checked = (APP.settings.taxMode===r.value);
     r.onchange = ()=>{ APP.settings.taxMode=r.value; saveAll(); render(); };
@@ -287,7 +367,7 @@ function bindSettingsRadios(){
 
     // Подождём, чтобы гарантированно очистилось, и создадим seed-данные заново
    setTimeout(() => {
-  APP = loadAll();   // создаём демо данные
+  APP = normalizeApp(loadAll());   // создаём демо данные
   saveAll();
 
   // выставляем дату последнего дня демо, чтобы график не был пуст
@@ -306,14 +386,14 @@ function bindSettingsRadios(){
 
 /* ========= Calculations ========= */
 function calcCommission(d){ // парк
-  const mode = APP.settings.parkMode || 'none';
+  const park = APP.settings.park || {};
+  const mode = park.mode || 'none';
   if(mode==='none') return 0;
-  if(mode==='150day'){
-    return ( (d.income||0) > 0 || (d.orders||0) > 0 ) ? 150 : 0;
+  if(mode==='day'){
+    return ((d.income||0) > 0 || (d.orders||0) > 0) ? park.dayFee : 0;
   }
-  if(mode==='15order'){ return (d.orders||0) * 15; }
-  if(mode==='20order'){ return (d.orders||0) * 20; }
-  if(mode==='4pct'){ return (d.income||0) * 0.04; } // с дохода (без чаевых/прочих доходов)
+  if(mode==='order'){ return (d.orders||0) * park.orderFee; }
+  if(mode==='percent'){ return (d.income||0) * (park.percent/100); } // с дохода (без чаевых/прочих доходов)
   return 0;
 }
 function calcTax(d){
