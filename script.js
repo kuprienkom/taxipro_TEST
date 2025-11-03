@@ -896,92 +896,107 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
   }
 })();
 
-// Мягкая блокировка bounce-скролла: разрешаем вертикальный скролл
-// только внутри реальных скролл-контейнеров и не мешаем горизонтальным жестам.
-const BOUNCE_GUARD_SELECTORS = ['.content', '.modal .body'];
-const BOUNCE_GUARD_QUERY = BOUNCE_GUARD_SELECTORS.join(',');
-const guardedElements = new WeakSet();
+// Мягкая блокировка bounce-скролла: ищем ближайший вертикальный скролл-контейнер
+// и предотвращаем передачу свайпа оболочке Telegram только на границах.
+const SCROLLABLE_QUERY = '.content, .modal .body';
+const touchState = {
+  startX: 0,
+  startY: 0,
+  scrollEl: null,
+};
 
-function applyBounceGuard(el) {
-  if (!el || guardedElements.has(el)) return;
+function isScrollableElement(el) {
+  if (!el) return false;
+  if (!(el instanceof Element)) return false;
+  if (el.matches(SCROLLABLE_QUERY)) return true;
 
-  const touchSnapshot = { startX: 0, startY: 0 };
-
-  const rememberStart = (event) => {
-    if (!event.touches || !event.touches.length) return;
-    const touch = event.touches[0];
-    touchSnapshot.startX = touch.clientX;
-    touchSnapshot.startY = touch.clientY;
-
-    if (el.scrollHeight <= el.clientHeight + 1) return;
-
-    if (el.scrollTop <= 0) {
-      el.scrollTop = 1;
-    } else if (el.scrollTop + el.clientHeight >= el.scrollHeight) {
-      el.scrollTop = el.scrollHeight - el.clientHeight - 1;
-    }
-  };
-
-  const handleMove = (event) => {
-    if (!event.touches || !event.touches.length) return;
-    const touch = event.touches[0];
-    const dx = Math.abs(touch.clientX - touchSnapshot.startX);
-    const dy = Math.abs(touch.clientY - touchSnapshot.startY);
-
-    if (dx > dy) {
-      return; // горизонтальный жест — не трогаем
-    }
-
-    if (el.scrollHeight <= el.clientHeight + 1) {
-      if (event.cancelable) event.preventDefault();
-      return;
-    }
-
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    const atTop = el.scrollTop <= 0;
-    const atBottom = el.scrollTop >= maxScroll;
-
-    if ((touch.clientY > touchSnapshot.startY && atTop) || (touch.clientY < touchSnapshot.startY && atBottom)) {
-      if (event.cancelable) event.preventDefault();
-      if (atTop) {
-        el.scrollTop = 1;
-      } else if (atBottom) {
-        el.scrollTop = Math.max(0, maxScroll - 1);
-      }
-    }
-  };
-
-  el.addEventListener('touchstart', rememberStart, { passive: false });
-  el.addEventListener('touchmove', handleMove, { passive: false });
-
-  guardedElements.add(el);
+  const style = getComputedStyle(el);
+  const overflowY = style.overflowY;
+  const canScroll = (overflowY === 'auto' || overflowY === 'scroll')
+    && el.scrollHeight > el.clientHeight + 1;
+  return canScroll;
 }
 
-function bindBounceGuards(root = document) {
-  BOUNCE_GUARD_SELECTORS.forEach((selector) => {
-    root.querySelectorAll(selector).forEach(applyBounceGuard);
-  });
+function findScrollable(start) {
+  if (!(start instanceof Element)) return null;
+  let el = start;
+  while (el && el !== document.body) {
+    if (isScrollableElement(el)) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
 }
 
-bindBounceGuards();
+function clampScroll(el) {
+  if (!el) return;
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  if (maxScroll <= 0) return;
 
-const bounceObserver = new MutationObserver((mutations) => {
-  mutations.forEach((mutation) => {
-    mutation.addedNodes.forEach((node) => {
-      if (node instanceof Element) {
-        bindBounceGuards(node);
-      }
-    });
-  });
-});
+  if (el.scrollTop <= 0) {
+    el.scrollTop = 1;
+  } else if (el.scrollTop >= maxScroll) {
+    el.scrollTop = Math.max(0, maxScroll - 1);
+  }
+}
 
-bounceObserver.observe(document.body, { childList: true, subtree: true });
-
-document.addEventListener('touchmove', (event) => {
-  if (event.target instanceof Element && event.target.closest(BOUNCE_GUARD_QUERY)) {
+document.addEventListener('touchstart', (event) => {
+  if (!event.touches || !event.touches.length) {
+    touchState.scrollEl = null;
     return;
   }
-  if (event.cancelable) {
-    event.preventDefault();
+
+  const touch = event.touches[0];
+  touchState.startX = touch.clientX;
+  touchState.startY = touch.clientY;
+  touchState.scrollEl = findScrollable(event.target);
+
+  clampScroll(touchState.scrollEl);
+}, { passive: false });
+
+const resetTouchState = () => {
+  touchState.scrollEl = null;
+};
+
+document.addEventListener('touchend', resetTouchState, { passive: true });
+document.addEventListener('touchcancel', resetTouchState, { passive: true });
+
+document.addEventListener('touchmove', (event) => {
+  if (!event.touches || !event.touches.length) return;
+
+  const touch = event.touches[0];
+  const dx = Math.abs(touch.clientX - touchState.startX);
+  const dy = Math.abs(touch.clientY - touchState.startY);
+
+  // Горизонтальные жесты оставляем нетронутыми.
+  if (dx > dy) {
+    return;
+  }
+
+  const el = touchState.scrollEl;
+  if (!el) {
+    if (event.cancelable) event.preventDefault();
+    return;
+  }
+
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  if (maxScroll <= 0) {
+    if (event.cancelable) event.preventDefault();
+    return;
+  }
+
+  const goingDown = touch.clientY > touchState.startY;
+  const goingUp = touch.clientY < touchState.startY;
+
+  if (goingDown && el.scrollTop <= 0) {
+    if (event.cancelable) event.preventDefault();
+    el.scrollTop = 1;
+    return;
+  }
+
+  if (goingUp && el.scrollTop >= maxScroll) {
+    if (event.cancelable) event.preventDefault();
+    el.scrollTop = Math.max(0, maxScroll - 1);
   }
 }, { passive: false });
