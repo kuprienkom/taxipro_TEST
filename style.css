@@ -97,6 +97,11 @@
   .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .radio{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid rgba(255,255,255,.06);padding:8px 10px;border-radius:12px;cursor:pointer}
   .radio input{accent-color:#ffc107}
+  .park-option{gap:12px;align-items:center;flex-wrap:wrap}
+  .park-option .option-input{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .park-option .option-input .option-chip{padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:var(--panel2);color:var(--text);font-size:13px;cursor:pointer;min-width:72px;text-align:center}
+  .park-option .option-input .option-chip:hover{border-color:rgba(255,255,255,.18);background:var(--panel)}
+  .park-option .option-input span{white-space:nowrap}
   .car-list{display:grid;gap:8px}
   .car-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px}
   .car-actions{display:flex;gap:8px}

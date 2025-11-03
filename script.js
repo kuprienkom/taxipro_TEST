@@ -2,6 +2,13 @@
 /* ========= Утилиты ========= */
 const fmt = (n) => (Math.round(n)).toLocaleString('ru-RU');
 const rub = (n) => `${fmt(n)} ₽`;
+const formatPercent = (value) => {
+  const hasFraction = Math.abs(value - Math.round(value)) > 0.0001;
+  return `${Number(value || 0).toLocaleString('ru-RU', {
+    minimumFractionDigits: hasFraction ? 1 : 0,
+    maximumFractionDigits: 1
+  })} %`;
+};
 const todayISO = () => { const d=new Date();return d.toISOString().slice(0,10); };
 const addDays = (iso,delta)=>{const d=new Date(iso);d.setDate(d.getDate()+delta);return d.toISOString().slice(0,10);}
 const rangeDays=(end,count)=>{const a=[];for(let i=count-1;i>=0;i--)a.push(addDays(end,-i));return a;}
@@ -11,7 +18,10 @@ const isoToShort = (iso)=>{const d=new Date(iso);return d.toLocaleDateString('ru
 {
   activeCarId: string,
   cars: [{id,name,cls,tank}],
-  settings: { parkMode:'none'|'150day'|'15order'|'20order'|'4pct', taxMode:'none'|'self4'|'ip6' },
+  settings: {
+    park: { mode:'none'|'day'|'orderRegion'|'orderCapital'|'percent', dayFee, orderRegion, orderCapital, percent },
+    taxMode:'none'|'self4'|'ip6'
+  },
   dataByCar: {
     [carId]: { [dateISO]: {orders,income,rent,fuel,tips,otherIncome,otherExpense,fines,hours} }
   }
@@ -79,7 +89,10 @@ function loadAll() {
   const obj = {
     activeCarId: carId,
     cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50 }],
-    settings: { parkMode: '150day', taxMode: 'none' },
+    settings: {
+      park: { mode: 'day', dayFee: 30, orderRegion: 10, orderCapital: 15, percent: 4 },
+      taxMode: 'none'
+    },
     dataByCar: { [carId]: seedData }
   };
 
@@ -92,8 +105,42 @@ function saveAll() {
 }
 
 
+function normalizeApp(app){
+  app.settings = app.settings || {};
+
+  const defaultsPark = { mode: 'none', dayFee: 30, orderRegion: 10, orderCapital: 15, percent: 4 };
+
+  if (!app.settings.park) {
+    if (app.settings.parkMode) {
+      const map = {
+        none: 'none',
+        '150day': 'day',
+        '15order': 'orderRegion',
+        '20order': 'orderCapital',
+        '4pct': 'percent'
+      };
+      app.settings.park = { ...defaultsPark, mode: map[app.settings.parkMode] || 'none' };
+    } else {
+      app.settings.park = { ...defaultsPark };
+    }
+  } else {
+    app.settings.park = { ...defaultsPark, ...app.settings.park };
+  }
+
+  app.settings.park.dayFee = Math.max(0, Math.round(Number(app.settings.park.dayFee) || 0));
+  app.settings.park.orderRegion = Math.max(0, Math.round(Number(app.settings.park.orderRegion) || 0));
+  app.settings.park.orderCapital = Math.max(0, Math.round(Number(app.settings.park.orderCapital) || 0));
+  const percent = Number(app.settings.park.percent);
+  app.settings.park.percent = Math.max(0, Number.isFinite(percent) ? Math.round(percent * 10) / 10 : 0);
+
+  app.settings.taxMode = app.settings.taxMode || 'none';
+  delete app.settings.parkMode;
+
+  return app;
+}
+
 /* ========= State ========= */
-let APP = loadAll();
+let APP = normalizeApp(loadAll());
 
 let currentScreen='home';
 let currentPeriod='day';
@@ -143,6 +190,57 @@ const fuelPctEl=document.getElementById('fuelPct');
 
 const reportsBody=document.getElementById('reportsBody');
 
+const parkDayButton = document.getElementById('parkDayValue');
+const parkOrderRegionButton = document.getElementById('parkOrderRegionValue');
+const parkOrderCapitalButton = document.getElementById('parkOrderCapitalValue');
+const parkPercentButton = document.getElementById('parkPercentValue');
+
+const PARK_CONTROL_CONFIG = {
+  dayFee: {
+    title: 'Комиссия за смену',
+    label: 'Укажите фиксированную комиссию парка',
+    quick: [20, 30, 70],
+    quickMode: 'rub',
+    step: 10,
+    round: true,
+    format: (v) => rub(v)
+  },
+  orderRegion: {
+    title: 'Комиссия за заказ',
+    label: 'Введите сумму удержания с заказа',
+    quick: [5, 10, 15],
+    quickMode: 'rub',
+    step: 1,
+    round: true,
+    format: (v) => rub(v)
+  },
+  orderCapital: {
+    title: 'Комиссия за заказ (МСК/СПб)',
+    label: 'Введите сумму удержания для столичных заказов',
+    quick: [20, 25, 30],
+    quickMode: 'rub',
+    step: 1,
+    round: true,
+    format: (v) => rub(v)
+  },
+  percent: {
+    title: 'Процент с дохода',
+    label: 'Введите процент удержания',
+    quick: [3, 4, 5],
+    quickMode: 'percent',
+    step: 0.1,
+    decimals: 1,
+    format: (v) => formatPercent(v)
+  }
+};
+
+const PARK_MODE_TO_KEY = {
+  day: 'dayFee',
+  orderRegion: 'orderRegion',
+  orderCapital: 'orderCapital',
+  percent: 'percent'
+};
+
 /* ========= Modal (edit values) ========= */
 const modalBg = document.getElementById('modalBg');
 const modalTitle=document.getElementById('modalTitle');
@@ -151,7 +249,6 @@ const modalInput=document.getElementById('modalInput');
 const quickArea=document.getElementById('quickArea');
 const btnCancel=document.getElementById('btnCancel');
 const btnSave=document.getElementById('btnSave');
-let editField=null;
 
 const QUICK_PRESETS = {
   income: [1000,3000,5000],
@@ -165,31 +262,104 @@ const QUICK_PRESETS = {
   hours: [1,2,4]
 };
 
-function renderQuick(field){
+const QUICK_MODES = { orders: 'plain', hours: 'plain' };
+let modalState = null;
+
+function renderQuick(values, mode){
   quickArea.innerHTML = '';
-  (QUICK_PRESETS[field]||[]).forEach(val=>{
+  const list = values || [];
+  if(!list.length){ quickArea.style.display='none'; return; }
+  quickArea.style.display='flex';
+  list.forEach(val=>{
     const chip=document.createElement('div');
     chip.className='chip';
-    chip.textContent = field==='orders'||field==='hours' ? `+${val}` : `+${val} ₽`;
-    chip.onclick=()=>{ modalInput.value = Number(modalInput.value||0) + val; };
+    const label = mode==='percent' ? `+${val}%` : (mode==='plain' ? `+${val}` : `+${val} ₽`);
+    chip.textContent = label;
+    chip.onclick=()=>{
+      const raw = (modalInput.value||'0').toString().replace(',', '.');
+      const current = Number.parseFloat(raw);
+      const safeCurrent = Number.isFinite(current) ? current : 0;
+      const next = safeCurrent + val;
+      const decimals = modalState && typeof modalState.decimals === 'number' ? modalState.decimals : null;
+      modalInput.value = decimals!==null ? next.toFixed(decimals) : String(next);
+    };
     quickArea.appendChild(chip);
   });
 }
-function openModal(field,title){
-  editField=field; modalTitle.textContent=title; modalLabel.textContent='Введите значение';
-  modalInput.value = Number(ensureDay(currentDate)[field]||0);
-  renderQuick(field);
-  modalBg.classList.add('show'); modalInput.focus();
+
+function openValueModal(options){
+  modalState = options;
+  modalTitle.textContent = options.title || 'Изменить';
+  modalLabel.textContent = options.label || 'Введите значение';
+  modalInput.value = options.value ?? 0;
+  modalInput.step = options.step ? options.step.toString() : '1';
+  modalInput.min = options.min ?? 0;
+  modalInput.placeholder = options.placeholder || '0';
+  modalInput.inputMode = options.step && Number(options.step) % 1 !== 0 ? 'decimal' : 'numeric';
+  renderQuick(options.quick, options.quickMode || 'rub');
+  modalBg.classList.add('show');
+  setTimeout(()=>modalInput.focus({ preventScroll: true }), 20);
 }
-function closeModal(){ modalBg.classList.remove('show'); editField=null; }
+
+function closeModal(){ modalBg.classList.remove('show'); modalState=null; quickArea.innerHTML=''; }
 btnCancel.onclick=closeModal;
 modalBg.addEventListener('click',e=>{ if(e.target===modalBg) closeModal(); });
 btnSave.onclick=()=>{
-  if(!editField) return;
-  const v = Number(modalInput.value||0);
-  ensureDay(currentDate)[editField]=v;
-  saveAll(); closeModal(); render();
+  if(!modalState) return;
+  const raw = (modalInput.value||'0').toString().replace(',', '.');
+  let value = Number.parseFloat(raw);
+  if(!Number.isFinite(value)) value = modalState.min ?? 0;
+  if(typeof modalState.min === 'number') value = Math.max(modalState.min, value);
+  if(typeof modalState.max === 'number') value = Math.min(modalState.max, value);
+  if(typeof modalState.decimals === 'number') value = Number(value.toFixed(modalState.decimals));
+  if(modalState.round) value = Math.round(value);
+  if(modalState.onSave) modalState.onSave(value);
+  closeModal();
 };
+
+function openDayModal(field,title){
+  const day = ensureDay(currentDate);
+  const mode = QUICK_MODES[field] || 'rub';
+  const step = field==='hours' ? 0.5 : 1;
+  openValueModal({
+    title,
+    label: 'Введите значение',
+    value: Number(day[field] || 0),
+    min: 0,
+    step,
+    quick: QUICK_PRESETS[field],
+    quickMode: mode,
+    decimals: field==='hours' ? 1 : undefined,
+    round: field==='orders',
+    onSave: (val)=>{
+      day[field] = val;
+      saveAll();
+      render();
+    }
+  });
+}
+
+function openParkModal(key){
+  const cfg = PARK_CONTROL_CONFIG[key];
+  if(!cfg) return;
+  const park = APP.settings.park;
+  openValueModal({
+    title: cfg.title,
+    label: cfg.label,
+    value: Number(park[key] || 0),
+    min: 0,
+    step: cfg.step,
+    quick: cfg.quick,
+    quickMode: cfg.quickMode,
+    decimals: cfg.decimals,
+    round: cfg.round,
+    onSave: (val)=>{
+      park[key] = val;
+      saveAll();
+      render();
+    }
+  });
+}
 
 /* ========= Car Edit Modal ========= */
 const carEditBg=document.getElementById('carEditBg');
@@ -273,10 +443,40 @@ addCarBtn.onclick=()=>{
 
 /* ========= Settings (commission & tax) ========= */
 function bindSettingsRadios(){
+  const park = APP.settings.park;
   document.querySelectorAll('input[name="park"]').forEach(r=>{
-    r.checked = (APP.settings.parkMode===r.value);
-    r.onchange = ()=>{ APP.settings.parkMode=r.value; saveAll(); render(); };
+    r.checked = (park.mode===r.value);
+    r.onchange = ()=>{
+      park.mode=r.value;
+      saveAll();
+      render();
+      const key = PARK_MODE_TO_KEY[r.value];
+      if(key){
+        setTimeout(()=>{
+          if(APP.settings.park.mode === r.value){
+            openParkModal(key);
+          }
+        }, 30);
+      }
+    };
   });
+
+  const buttons = {
+    dayFee: parkDayButton,
+    orderRegion: parkOrderRegionButton,
+    orderCapital: parkOrderCapitalButton,
+    percent: parkPercentButton
+  };
+
+  Object.entries(buttons).forEach(([key, button])=>{
+    if(!button) return;
+    const cfg = PARK_CONTROL_CONFIG[key];
+    const formatter = cfg && cfg.format ? cfg.format : (v)=>v;
+    const value = Number(park[key] || 0);
+    button.textContent = formatter(value);
+    button.onclick = ()=>openParkModal(key);
+  });
+
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
     r.checked = (APP.settings.taxMode===r.value);
     r.onchange = ()=>{ APP.settings.taxMode=r.value; saveAll(); render(); };
@@ -287,7 +487,7 @@ function bindSettingsRadios(){
 
     // Подождём, чтобы гарантированно очистилось, и создадим seed-данные заново
    setTimeout(() => {
-  APP = loadAll();   // создаём демо данные
+  APP = normalizeApp(loadAll());   // создаём демо данные
   saveAll();
 
   // выставляем дату последнего дня демо, чтобы график не был пуст
@@ -306,14 +506,15 @@ function bindSettingsRadios(){
 
 /* ========= Calculations ========= */
 function calcCommission(d){ // парк
-  const mode = APP.settings.parkMode || 'none';
+  const park = APP.settings.park || {};
+  const mode = park.mode || 'none';
   if(mode==='none') return 0;
-  if(mode==='150day'){
-    return ( (d.income||0) > 0 || (d.orders||0) > 0 ) ? 150 : 0;
+  if(mode==='day'){
+    return ((d.income||0) > 0 || (d.orders||0) > 0) ? park.dayFee : 0;
   }
-  if(mode==='15order'){ return (d.orders||0) * 15; }
-  if(mode==='20order'){ return (d.orders||0) * 20; }
-  if(mode==='4pct'){ return (d.income||0) * 0.04; } // с дохода (без чаевых/прочих доходов)
+  if(mode==='orderRegion'){ return (d.orders||0) * park.orderRegion; }
+  if(mode==='orderCapital'){ return (d.orders||0) * park.orderCapital; }
+  if(mode==='percent'){ return (d.income||0) * (park.percent/100); } // с дохода (без чаевых/прочих доходов)
   return 0;
 }
 function calcTax(d){
@@ -811,7 +1012,7 @@ document.querySelectorAll('.card[data-edit]').forEach(c=>{
       orders:'Количество заказов', rent:'Аренда за день', fuel:'Топливо за день',
       otherExpense:'Прочие расходы за день', fines:'Штрафы за день', hours:'Часы за день'
     };
-    openModal(field, titles[field]||'Изменить');
+    openDayModal(field, titles[field]||'Изменить');
   });
 });
 // reports tabs
