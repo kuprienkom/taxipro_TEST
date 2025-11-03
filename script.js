@@ -856,6 +856,13 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
        if (Telegram.WebApp.disableVerticalSwipes) {
          Telegram.WebApp.disableVerticalSwipes();
        }
+       if (Telegram.WebApp.onEvent) {
+         Telegram.WebApp.onEvent('viewportChanged', (state = {}) => {
+           if (state.isExpanded === false) {
+             Telegram.WebApp.expand();
+           }
+         });
+       }
        // Совместимость старого/нового API подтверждения закрытия
        if (Telegram.WebApp.enableClosingConfirmation) {
          Telegram.WebApp.enableClosingConfirmation();
