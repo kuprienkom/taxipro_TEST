@@ -902,23 +902,47 @@ function lockBounceScroll(el) {
   el.dataset.bounceLock = '1';
 
   let startY = 0;
+  let startX = 0;
 
-  el.addEventListener('touchstart', (e) => {
+  const handleTouchStart = (e) => {
     if (e.touches.length !== 1) return;
-    startY = e.touches[0].clientY;
-  }, { passive: true });
+    const touch = e.touches[0];
+    startY = touch.clientY;
+    startX = touch.clientX;
 
-  el.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 1) return;
-    const currentY = e.touches[0].clientY;
-    const delta = currentY - startY;
-    const atTop = el.scrollTop <= 0;
-    const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) return;
 
-    if ((atTop && delta > 0) || (atBottom && delta < 0)) {
-      e.preventDefault();
+    if (el.scrollTop <= 0) {
+      el.scrollTop = 1;
+    } else if (el.scrollTop >= maxScroll) {
+      el.scrollTop = maxScroll - 1;
     }
-  }, { passive: false });
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const dy = touch.clientY - startY;
+    const dx = touch.clientX - startX;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return; // горизонтальный жест — пропускаем
+    }
+
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) {
+      if (e.cancelable) e.preventDefault();
+      return;
+    }
+
+    if ((dy > 0 && el.scrollTop <= 0) || (dy < 0 && el.scrollTop >= maxScroll)) {
+      if (e.cancelable) e.preventDefault();
+    }
+  };
+
+  el.addEventListener('touchstart', handleTouchStart, { passive: true });
+  el.addEventListener('touchmove', handleTouchMove, { passive: false });
 }
 
 const SCROLL_LOCK_SELECTOR = '.content, .modal .body, [data-scroll-lock]';

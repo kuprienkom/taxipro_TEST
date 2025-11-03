@@ -29,7 +29,6 @@
     overflow-y:auto;
     overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch;
-    touch-action:pan-y;
   }
   .top-controls{display:flex;gap:8px;align-items:center;margin-bottom:12px}
   .tabs{display:flex;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px;overflow:hidden}
