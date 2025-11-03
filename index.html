@@ -4,16 +4,16 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
-<title>Такси Анализатор</title>
+<title>TaxiPro</title>
 <link href="manifest.json" rel="manifest"/><link href="style.css" rel="stylesheet"/>
 
 <script defer="defer" src="script.js"></script></head>
 <body>
 <div class="app">
 <div class="appbar">
-<div class="logo"></div>
+<div class="logo" aria-hidden="true"></div>
 <div class="title">
-<b>Такси Анализатор</b>
+<b>TaxiPro</b>
 <span id="subtitle">Главная · сегодня</span>
 </div>
 <div class="right">
@@ -133,9 +133,18 @@
 </div>
 </div>
 <div class="nav">
-<div class="navbtn active" data-screen="home">🏠 Главная</div>
-<div class="navbtn" data-screen="reports">📊 Отчёты</div>
-<div class="navbtn" data-screen="settings">⚙️ Настройки</div>
+<div class="navbtn active" data-screen="home">
+<span class="nav-icon" aria-hidden="true">🏠</span>
+<span class="nav-label">Главная</span>
+</div>
+<div class="navbtn" data-screen="reports">
+<span class="nav-icon" aria-hidden="true">📊</span>
+<span class="nav-label">Отчёты</span>
+</div>
+<div class="navbtn" data-screen="settings">
+<span class="nav-icon" aria-hidden="true">⚙️</span>
+<span class="nav-label">Настройки</span>
+</div>
 </div>
 </div>
 <!-- MODALS -->
