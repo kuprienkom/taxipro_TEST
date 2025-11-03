@@ -98,6 +98,10 @@
   .car-form{display:flex;flex-direction:column;gap:8px;flex:1}
   .car-meta{display:flex;gap:8px;flex-wrap:wrap}
   .car-meta input{flex:1;min-width:130px;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#0f0f10;color:var(--text);font-size:14px}
+  .modal-trigger{cursor:pointer;-moz-appearance:textfield}
+  .modal-trigger:read-only{cursor:pointer}
+  .modal-trigger::-webkit-inner-spin-button,
+  .modal-trigger::-webkit-outer-spin-button{margin:0;-webkit-appearance:none}
   .radio{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid rgba(255,255,255,.06);padding:8px 10px;border-radius:12px;cursor:pointer}
   .radio input{accent-color:#ffc107}
   .park-option{gap:12px;align-items:center;flex-wrap:wrap}

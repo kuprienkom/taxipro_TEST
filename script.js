@@ -332,9 +332,9 @@ const modalInput=document.getElementById('modalInput');
 const quickArea=document.getElementById('quickArea');
 const btnCancel=document.getElementById('btnCancel');
 const btnSave=document.getElementById('btnSave');
-let editField=null;
+let modalContext=null;
 
-const QUICK_PRESETS = {
+const DAY_QUICK_PRESETS = {
   income: [1000,3000,5000],
   otherIncome: [500,1000,2000],
   tips: [50,100,200],
@@ -345,34 +345,160 @@ const QUICK_PRESETS = {
   orders: [1,5,10],
   hours: [1,2,4]
 };
+const DAY_MONEY_FIELDS = new Set(['income','otherIncome','tips','rent','fuel','otherExpense','fines']);
 
-function renderQuick(field){
+const quickLabelRub = (val) => `+${fmt(val)} ₽`;
+const quickLabelPercent = (val) => `+${val}%`;
+
+function defaultParse(raw){
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function renderQuickFromContext(context){
+  const values = context.quick || [];
   quickArea.innerHTML = '';
-  (QUICK_PRESETS[field]||[]).forEach(val=>{
+  quickArea.style.display = values.length ? 'flex' : 'none';
+  values.forEach(val=>{
     const chip=document.createElement('div');
     chip.className='chip';
-    chip.textContent = field==='orders'||field==='hours' ? `+${val}` : `+${val} ₽`;
-    chip.onclick=()=>{ modalInput.value = Number(modalInput.value||0) + val; };
+    chip.textContent = context.quickLabel ? context.quickLabel(val) : `+${val}`;
+    chip.onclick=()=>{
+      const parser = context.parse || defaultParse;
+      const current = parser(modalInput.value||0);
+      const base = Number.isFinite(current) ? current : 0;
+      const next = context.quickMode==='set'
+        ? (context.quickCompute ? context.quickCompute(val, base) : val)
+        : base + val;
+      const preview = context.quickPreview
+        ? context.quickPreview(next, val, base)
+        : (context.sanitize ? context.sanitize(next) : next);
+      const formatted = context.format ? context.format(preview) : preview;
+      modalInput.value = formatted;
+    };
     quickArea.appendChild(chip);
   });
 }
-function openModal(field,title){
-  editField=field; modalTitle.textContent=title; modalLabel.textContent='Введите значение';
-  modalInput.value = Number(ensureDay(currentDate)[field]||0);
-  renderQuick(field);
-  modalBg.classList.add('show'); modalInput.focus();
+
+function openModal(context){
+  modalContext = {
+    title: 'Изменить',
+    label: 'Введите значение',
+    value: 0,
+    step: 1,
+    min: 0,
+    quick: [],
+    quickMode: 'add',
+    parse: defaultParse,
+    sanitize: (v)=>v,
+    format: (v)=>v,
+    ...context
+  };
+  modalTitle.textContent = modalContext.title;
+  modalLabel.textContent = modalContext.label;
+  modalInput.type = modalContext.inputType || 'number';
+  if (modalContext.min != null) modalInput.min = modalContext.min;
+  else modalInput.removeAttribute('min');
+  if (modalContext.max != null) modalInput.max = modalContext.max;
+  else modalInput.removeAttribute('max');
+  modalInput.step = modalContext.step != null ? modalContext.step : 1;
+  if (modalContext.inputMode) {
+    modalInput.setAttribute('inputmode', modalContext.inputMode);
+  } else {
+    modalInput.removeAttribute('inputmode');
+  }
+  const initialRaw = modalContext.value != null ? modalContext.value : 0;
+  const initial = modalContext.prepare ? modalContext.prepare(initialRaw) : modalContext.sanitize(initialRaw);
+  modalInput.value = modalContext.format ? modalContext.format(initial) : initial;
+  renderQuickFromContext(modalContext);
+  modalBg.classList.add('show');
+  modalInput.focus();
+  modalInput.select();
 }
-function closeModal(){ modalBg.classList.remove('show'); editField=null; }
+
+function closeModal(){
+  modalBg.classList.remove('show');
+  modalContext=null;
+}
 btnCancel.onclick=closeModal;
 modalBg.addEventListener('click',e=>{ if(e.target===modalBg) closeModal(); });
 btnSave.onclick=()=>{
-  if(!editField) return;
-  const v = Number(modalInput.value||0);
-  const day = ensureDay(currentDate);
-  day[editField]=v;
-  applyAutoRent(day);
-  saveAll(); closeModal(); render();
+  if(!modalContext) return;
+  const context = modalContext;
+  const parser = context.parse || defaultParse;
+  let value = parser(modalInput.value||0);
+  if (!Number.isFinite(value)) value = context.fallback != null ? context.fallback : 0;
+  if (context.min != null) value = Math.max(context.min, value);
+  if (context.max != null) value = Math.min(context.max, value);
+  value = context.sanitize ? context.sanitize(value) : value;
+  closeModal();
+  if (context.onSave) context.onSave(value);
 };
+
+function openDayModal(field, title){
+  const day = ensureDay(currentDate);
+  const current = Number(day[field]||0);
+  const quick = DAY_QUICK_PRESETS[field] || [];
+  const isMoney = DAY_MONEY_FIELDS.has(field);
+  const isOrders = field==='orders';
+  const isHours = field==='hours';
+  const sanitize = (val)=>{
+    const num = Number(val);
+    if (!Number.isFinite(num)) return 0;
+    if (isMoney || isOrders || isHours) return Math.max(0, Math.round(num));
+    return Math.max(0, num);
+  };
+  let quickLabel;
+  if (quick.length) {
+    if (isMoney) quickLabel = quickLabelRub;
+    else if (isOrders) quickLabel = (v)=>`+${v}`;
+    else if (isHours) quickLabel = (v)=>`+${v} ч`;
+  }
+  openModal({
+    title,
+    value: current,
+    quick,
+    quickLabel,
+    sanitize,
+    onSave:(value)=>{
+      day[field]=value;
+      applyAutoRent(day);
+      saveAll();
+      render();
+    }
+  });
+}
+
+function sanitizeMoneyValue(value){
+  return safeMoney(value);
+}
+
+function sanitizePercentValue(value){
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.round(num * 10) / 10);
+}
+
+function attachModalInput(input, getContext){
+  if (!input) return;
+  if (!input.dataset.modalBound) {
+    input.dataset.modalBound = '1';
+    input.readOnly = true;
+    input.classList.add('modal-trigger');
+    input.addEventListener('pointerdown', (ev)=>{
+      ev.preventDefault();
+      const ctx = getContext && getContext();
+      if (ctx) openModal(ctx);
+    });
+    input.addEventListener('keydown', (ev)=>{
+      if (ev.key==='Enter' || ev.key===' ' || ev.key==='Space' || ev.key==='Spacebar') {
+        ev.preventDefault();
+        const ctx = getContext && getContext();
+        if (ctx) openModal(ctx);
+      }
+    });
+  }
+}
 
 /* ========= Car Edit Modal ========= */
 const carEditBg=document.getElementById('carEditBg');
@@ -424,6 +550,21 @@ const carRentInput=document.getElementById('carRent');
 const carTankInput=document.getElementById('carTank');
 const classButtons=document.getElementById('classButtons');
 let newCarClass='Эконом';
+
+if (carRentInput) {
+  attachModalInput(carRentInput, ()=>({
+    title: 'Сумма в сутки',
+    value: carRentInput.value==='' ? 0 : Number(carRentInput.value),
+    min: 0,
+    step: 50,
+    quick: [500,1000,2000,3000],
+    quickLabel: quickLabelRub,
+    quickMode: 'set',
+    sanitize: sanitizeMoneyValue,
+    onSave:(value)=>{ carRentInput.value = value; }
+  }));
+}
+
 classButtons.querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{
     newCarClass=b.dataset.cls;
@@ -492,24 +633,71 @@ function bindSettingsRadios(){
     r.onchange = ()=>{ park.mode=r.value; saveAll(); render(); };
   });
 
-  const bindParkInput = (input, key, isPercent=false) => {
+  const bindParkInput = (input, key, options = {}) => {
     if(!input) return;
-    const value = park[key];
-    input.value = isPercent ? Number(value).toString() : Math.round(Number(value)||0);
-    input.onchange = ()=>{
-      const raw = input.value;
-      const num = isPercent ? parseFloat(raw) : Math.round(Number(raw));
-      const safe = Number.isFinite(num) ? Math.max(0, num) : 0;
-      park[key] = safe;
-      input.value = isPercent ? safe : Math.round(safe);
-      saveAll();
-      render();
-    };
+    const sanitize = options.sanitize || sanitizeMoneyValue;
+    const parse = options.parse || defaultParse;
+    const display = options.display || ((v)=>v);
+    const quick = options.quick || [];
+    const quickLabel = options.quickLabel;
+    const min = options.min != null ? options.min : 0;
+    const step = options.step != null ? options.step : 1;
+    const inputMode = options.inputMode;
+    const quickMode = options.quickMode || 'add';
+
+    const sanitized = sanitize(park[key]);
+    park[key] = sanitized;
+    input.value = display(sanitized);
+
+    attachModalInput(input, ()=>({
+      title: options.title || 'Введите значение',
+      value: park[key] != null ? park[key] : 0,
+      min,
+      step,
+      quick,
+      quickLabel,
+      quickMode,
+      parse,
+      sanitize,
+      inputMode,
+      onSave:(value)=>{
+        park[key] = value;
+        input.value = display(value);
+        saveAll();
+        render();
+      }
+    }));
   };
 
-  bindParkInput(parkDayInput, 'dayFee');
-  bindParkInput(parkOrderInput, 'orderFee');
-  bindParkInput(parkPercentInput, 'percent', true);
+  bindParkInput(parkDayInput, 'dayFee', {
+    title: 'Фикс за сутки',
+    quick: [150,200,300,500],
+    quickLabel: quickLabelRub,
+    sanitize: sanitizeMoneyValue,
+    step: 10,
+    quickMode: 'set'
+  });
+  bindParkInput(parkOrderInput, 'orderFee', {
+    title: 'С заказа',
+    quick: [10,15,20,25],
+    quickLabel: quickLabelRub,
+    sanitize: sanitizeMoneyValue,
+    step: 5,
+    quickMode: 'set'
+  });
+  bindParkInput(parkPercentInput, 'percent', {
+    title: 'Процент с дохода',
+    quick: [1,3,4,5,7],
+    quickLabel: quickLabelPercent,
+    sanitize: sanitizePercentValue,
+    parse: (raw)=>{
+      const num = parseFloat(raw);
+      return Number.isFinite(num) ? num : 0;
+    },
+    step: 0.1,
+    inputMode: 'decimal',
+    quickMode: 'set'
+  });
 
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
     r.checked = (APP.settings.taxMode===r.value);
@@ -1078,7 +1266,7 @@ document.querySelectorAll('.card[data-edit]').forEach(c=>{
       orders:'Количество заказов', rent:'Аренда за день', fuel:'Топливо за день',
       otherExpense:'Прочие расходы за день', fines:'Штрафы за день', hours:'Часы за день'
     };
-    openModal(field, titles[field]||'Изменить');
+    openDayModal(field, titles[field]||'Изменить');
   });
 });
 // reports tabs
