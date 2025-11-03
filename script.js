@@ -847,26 +847,55 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
  // Первый рендер
  render();
 
- // ==== Telegram Mini App init (устойчивый вариант) ====
- (function initTelegram() {
-   try {
-     if (window.Telegram && Telegram.WebApp) {
-       Telegram.WebApp.ready();
-       Telegram.WebApp.expand();
-       if (Telegram.WebApp.disableVerticalSwipes) {
-         Telegram.WebApp.disableVerticalSwipes();
-       }
-       // Совместимость старого/нового API подтверждения закрытия
-       if (Telegram.WebApp.enableClosingConfirmation) {
-         Telegram.WebApp.enableClosingConfirmation();
-       } else {
-         Telegram.WebApp.isClosingConfirmationEnabled = true;
-       }
-       console.log('[TaxiPro] Telegram WebApp initialized');
-     } else {
-       console.warn('[TaxiPro] Telegram WebApp не обнаружен');
-     }
-   } catch (e) {
-     console.error('[TaxiPro] Telegram init error:', e);
-   }
- })();
+// ==== Телеграм-специфика и защита от свайпов ====
+(function initTelegram() {
+  const enforceExpand = () => {
+    try { Telegram.WebApp.expand(); } catch (e) {}
+  };
+
+  try {
+    if (window.Telegram && Telegram.WebApp) {
+      Telegram.WebApp.ready();
+      enforceExpand();
+
+      if (Telegram.WebApp.disableVerticalSwipes) {
+        Telegram.WebApp.disableVerticalSwipes();
+      }
+
+      if (Telegram.WebApp.setClosingBehavior) {
+        Telegram.WebApp.setClosingBehavior({ need_confirmation: true });
+      } else if (Telegram.WebApp.enableClosingConfirmation) {
+        Telegram.WebApp.enableClosingConfirmation();
+      } else {
+        Telegram.WebApp.isClosingConfirmationEnabled = true;
+      }
+
+      if (Telegram.WebApp.onEvent) {
+        Telegram.WebApp.onEvent('viewportChanged', (state = {}) => {
+          const collapsed = state.isExpanded === false;
+          const heightShrunk = typeof state.height === 'number'
+            && Telegram.WebApp.viewportStableHeight
+            && state.height + 2 < Telegram.WebApp.viewportStableHeight;
+          if (collapsed || heightShrunk) {
+            enforceExpand();
+            setTimeout(enforceExpand, 120);
+          }
+        });
+      }
+
+      // На всякий случай периодически переоткрываем полноэкранный режим при старте
+      setTimeout(enforceExpand, 150);
+      setTimeout(enforceExpand, 600);
+
+      console.log('[TaxiPro] Telegram WebApp initialized');
+    } else {
+      console.warn('[TaxiPro] Telegram WebApp не обнаружен');
+    }
+  } catch (e) {
+    console.error('[TaxiPro] Telegram init error:', e);
+  }
+})();
+
+// Встроенный контейнер `.content` получает собственный скролл, поэтому
+// дополнительных обработчиков касаний не требуется: Telegram не получает
+// overscroll, а пользователи сохраняют нативные жесты.
