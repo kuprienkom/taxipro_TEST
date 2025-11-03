@@ -373,6 +373,15 @@ let editingCarId=null;
 function openCarEdit(car){
   editingCarId=car.id;
   carEditName.value=car.name||'';
+  if(car.cls){
+    let option=[...carEditClass.options].find(opt=>opt.value===car.cls);
+    if(!option){
+      option=document.createElement('option');
+      option.value=car.cls;
+      option.textContent=car.cls;
+      carEditClass.appendChild(option);
+    }
+  }
   carEditClass.value=car.cls||'Эконом';
   carEditTank.value=car.tank||50;
   carEditRent.value=car.rentPerDay||0;
@@ -416,7 +425,7 @@ const carsContainer=document.getElementById('carsContainer');
 function renderCars(){
   const items = APP.cars.map(c=>`
     <div class="car-item">
-      <div><b>${c.name}</b> · <span style="color:var(--muted)">${c.cls||'-'}</span> · бак ${c.tank||'-'} л · аренда ${rub(c.rentPerDay||0)} / сутки</div>
+      <div class="car-info"><b>${c.name}</b> · <span class="car-class">${c.cls||'-'}</span> · ${rub(c.rentPerDay||0)} / сутки</div>
       <div class="car-actions">
         <button class="mini" data-edit="${c.id}">⚙️</button>
         <button class="mini ${APP.activeCarId===c.id?'primary':''}" data-car="${c.id}">${APP.activeCarId===c.id?'Активно':'Выбрать'}</button>

@@ -105,8 +105,11 @@
   .park-option .option-input input{width:90px;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#0f0f10;color:var(--text);font-size:14px}
   .park-option .option-input span{white-space:nowrap}
   .car-list{display:grid;gap:8px}
-  .car-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px}
-  .car-actions{display:flex;gap:8px}
+  .car-item{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px}
+  .car-info{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:14px}
+  .car-info b{font-size:15px}
+  .car-class{color:var(--muted)}
+  .car-actions{display:flex;gap:8px;flex:0 0 auto}
   .mini{padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:var(--panel2);color:var(--text);cursor:pointer}
   .mini.primary{background:linear-gradient(180deg,var(--accent2),var(--accent));color:#1a1a1a;border:none}
 
