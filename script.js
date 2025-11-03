@@ -10,10 +10,13 @@ const isoToShort = (iso)=>{const d=new Date(iso);return d.toLocaleDateString('ru
 /* ========= Storage schema =========
 {
   activeCarId: string,
-  cars: [{id,name,cls,tank}],
-  settings: { parkMode:'none'|'150day'|'15order'|'20order'|'4pct', taxMode:'none'|'self4'|'ip6' },
+  cars: [{id,name,cls,tank,rentPerDay}],
+  settings: {
+    park: { mode:'none'|'day'|'order'|'percent', dayFee, orderFee, percent },
+    taxMode:'none'|'self4'|'ip6'
+  },
   dataByCar: {
-    [carId]: { [dateISO]: {orders,income,rent,fuel,tips,otherIncome,otherExpense,fines,hours} }
+    [carId]: { [dateISO]: {orders,income,rent,fuel,tips,otherIncome,otherExpense,fines,hours,settings:{park:{...},taxMode}} }
   }
 }
 ==================================== */
@@ -78,8 +81,11 @@ function loadAll() {
   // === создаём объект приложения ===
   const obj = {
     activeCarId: carId,
-    cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50 }],
-    settings: { parkMode: '150day', taxMode: 'none' },
+    cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50, rentPerDay: 2700 }],
+    settings: {
+      park: { mode: 'day', dayFee: 150, orderFee: 15, percent: 4 },
+      taxMode: 'none'
+    },
     dataByCar: { [carId]: seedData }
   };
 
@@ -91,20 +97,179 @@ function saveAll() {
   localStorage.setItem(LS_KEY, JSON.stringify(APP));
 }
 
+const PARK_MODES = new Set(['none','day','order','percent']);
+const TAX_MODES = new Set(['none','self4','ip6']);
+const DAY_FIELDS = ['orders','income','rent','fuel','tips','otherIncome','otherExpense','fines','hours'];
+
+function sanitizeTaxMode(mode) {
+  return TAX_MODES.has(mode) ? mode : 'none';
+}
+
+function sanitizeParkConfig(raw = {}, defaults = {}) {
+  const merged = { ...defaults, ...raw };
+  const originalMode = raw && raw.mode;
+  let mode = merged.mode != null ? merged.mode : (defaults.mode || 'none');
+  if (mode === 'orderRegion' || mode === 'orderCapital') mode = 'order';
+  if (!PARK_MODES.has(mode)) mode = 'none';
+
+  const dayFeeNum = Number(merged.dayFee != null ? merged.dayFee : defaults.dayFee);
+  const dayFee = Number.isFinite(dayFeeNum) ? Math.max(0, Math.round(dayFeeNum)) : 0;
+
+  let orderSource = merged.orderFee;
+  if (orderSource == null && originalMode === 'orderCapital' && merged.orderCapital != null) orderSource = merged.orderCapital;
+  if (orderSource == null && originalMode === 'orderRegion' && merged.orderRegion != null) orderSource = merged.orderRegion;
+  if (orderSource == null && merged.orderRegion != null) orderSource = merged.orderRegion;
+  if (orderSource == null && merged.orderCapital != null) orderSource = merged.orderCapital;
+  if (orderSource == null && defaults.orderFee != null) orderSource = defaults.orderFee;
+  const orderFeeNum = Number(orderSource);
+  const orderFee = Number.isFinite(orderFeeNum) ? Math.max(0, Math.round(orderFeeNum)) : 0;
+
+  const percentNum = Number(merged.percent != null ? merged.percent : defaults.percent);
+  const percent = Number.isFinite(percentNum) ? Math.max(0, percentNum) : 0;
+
+  return { mode, dayFee, orderFee, percent };
+}
+
+function cloneSnapshot(snapshot) {
+  if (!snapshot) {
+    return { park: sanitizeParkConfig(), taxMode: 'none' };
+  }
+  return {
+    park: sanitizeParkConfig(snapshot.park),
+    taxMode: sanitizeTaxMode(snapshot.taxMode)
+  };
+}
+
+function sanitizeSettingsSnapshot(raw, fallbackSnapshot) {
+  const fallback = cloneSnapshot(fallbackSnapshot);
+  const sourcePark = raw && raw.park ? raw.park : {};
+  const park = sanitizeParkConfig(sourcePark, fallback.park);
+  const rawTax = raw && raw.taxMode != null ? raw.taxMode : fallback.taxMode;
+  const taxMode = sanitizeTaxMode(rawTax);
+  return { park, taxMode };
+}
+
+function normalizeDayEntry(entry, fallbackSnapshot) {
+  const base = { orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0 };
+  const day = { ...base, ...(entry || {}) };
+  DAY_FIELDS.forEach(key => {
+    const num = Number(day[key]);
+    day[key] = Number.isFinite(num) ? num : 0;
+  });
+  day.settings = sanitizeSettingsSnapshot(entry && entry.settings, fallbackSnapshot);
+  return day;
+}
+
+function clampTank(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 50;
+  return Math.max(20, Math.min(120, Math.round(num)));
+}
+
+function safeMoney(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.max(0, Math.round(num)) : 0;
+}
+
+
+
+
+function normalizeApp(app){
+  app = app || {};
+  app.settings = app.settings || {};
+
+  if (!app.settings.park && app.settings.parkMode) {
+    const map = {
+      none: 'none',
+      '150day': 'day',
+      '15order': 'order',
+      '20order': 'order',
+      '4pct': 'percent'
+    };
+    app.settings.park = { mode: map[app.settings.parkMode] || 'none' };
+  }
+
+  const defaultsPark = { mode: 'none', dayFee: 150, orderFee: 15, percent: 4 };
+  app.settings.park = sanitizeParkConfig(app.settings.park || {}, defaultsPark);
+  delete app.settings.park.orderRegion;
+  delete app.settings.park.orderCapital;
+
+  app.settings.taxMode = sanitizeTaxMode(app.settings.taxMode);
+  delete app.settings.parkMode;
+
+  if (!Array.isArray(app.cars)) app.cars = [];
+  app.cars = app.cars.map(car => {
+    const id = car && typeof car.id === 'string' ? car.id : (crypto.randomUUID ? crypto.randomUUID() : `car-${Date.now()}`);
+    const tank = clampTank(car && car.tank);
+    const rentSource = car && (car.rentPerDay != null ? car.rentPerDay : car.rent);
+    const rentPerDay = safeMoney(rentSource);
+    return {
+      id,
+      name: car && car.name ? car.name : 'Без названия',
+      cls: car && car.cls ? car.cls : 'Эконом',
+      tank,
+      rentPerDay
+    };
+  });
+
+  if (app.cars.length === 0) {
+    const id = crypto.randomUUID ? crypto.randomUUID() : `car-${Date.now()}`;
+    app.cars.push({ id, name: 'Новая машина', cls: 'Эконом', tank: 50, rentPerDay: 0 });
+  }
+
+  app.dataByCar = app.dataByCar || {};
+  app.cars.forEach(car => {
+    if (!app.dataByCar[car.id]) app.dataByCar[car.id] = {};
+  });
+
+  if (!app.activeCarId || !app.cars.some(c => c.id === app.activeCarId)) {
+    app.activeCarId = app.cars[0] ? app.cars[0].id : null;
+  }
+
+  const baseSnapshot = { park: { ...app.settings.park }, taxMode: app.settings.taxMode };
+  Object.keys(app.dataByCar).forEach(carId => {
+    const days = app.dataByCar[carId] || {};
+    Object.keys(days).forEach(dateISO => {
+      days[dateISO] = normalizeDayEntry(days[dateISO], baseSnapshot);
+    });
+  });
+
+  return app;
+}
+
+
+function currentSettingsSnapshot(){
+  return {
+    park: { ...APP.settings.park },
+    taxMode: APP.settings.taxMode
+  };
+}
+
 
 /* ========= State ========= */
-let APP = loadAll();
+let APP = normalizeApp(loadAll());
 
 let currentScreen='home';
 let currentPeriod='day';
 let currentDate=todayISO();
 
 const byCar = () => APP.dataByCar[APP.activeCarId] || (APP.dataByCar[APP.activeCarId]={});
-const ensureDay = (iso) => {
-  const d = byCar()[iso];
+function getDayData(iso, create=false){
+  const store = byCar();
+  let d = store[iso];
   if (d) return d;
-  return (byCar()[iso] = {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0});
+  const snapshot = cloneSnapshot(currentSettingsSnapshot());
+  if (!create) {
+    return {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,settings:snapshot};
+  }
+  const activeCar = APP.cars.find(x => x.id === APP.activeCarId);
+  const rentDefault = activeCar ? safeMoney(activeCar.rentPerDay) : 0;
+  d = {orders:0,income:0,rent:rentDefault,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,settings:snapshot};
+  store[iso] = d;
+  return d;
 }
+const ensureDay = (iso) => getDayData(iso, true);
+const readDay = (iso) => getDayData(iso, false);
 
 /* ========= DOM refs ========= */
 const subtitle = document.getElementById('subtitle');
@@ -142,6 +307,10 @@ const rentPctEl=document.getElementById('rentPct');
 const fuelPctEl=document.getElementById('fuelPct');
 
 const reportsBody=document.getElementById('reportsBody');
+
+const parkDayInput = document.getElementById('parkDayValue');
+const parkOrderInput = document.getElementById('parkOrderValue');
+const parkPercentInput = document.getElementById('parkPercentValue');
 
 /* ========= Modal (edit values) ========= */
 const modalBg = document.getElementById('modalBg');
@@ -196,6 +365,7 @@ const carEditBg=document.getElementById('carEditBg');
 const carEditName=document.getElementById('carEditName');
 const carEditClass=document.getElementById('carEditClass');
 const carEditTank=document.getElementById('carEditTank');
+const carEditRent=document.getElementById('carEditRent');
 const carEditCancel=document.getElementById('carEditCancel');
 const carEditSave=document.getElementById('carEditSave');
 let editingCarId=null;
@@ -205,6 +375,7 @@ function openCarEdit(car){
   carEditName.value=car.name||'';
   carEditClass.value=car.cls||'Эконом';
   carEditTank.value=car.tank||50;
+  carEditRent.value=car.rentPerDay||0;
   carEditBg.classList.add('show');
 }
 function closeCarEdit(){ carEditBg.classList.remove('show'); editingCarId=null; }
@@ -215,24 +386,37 @@ carEditSave.onclick=()=>{
   if(!car) return;
   car.name=carEditName.value||car.name;
   car.cls=carEditClass.value||car.cls;
-  car.tank=Number(carEditTank.value||car.tank||50);
+  if(carEditTank.value!=='' && carEditTank.value!=null){
+    car.tank=clampTank(carEditTank.value);
+  }
+  if(carEditRent.value!=='' && carEditRent.value!=null){
+    car.rentPerDay=safeMoney(carEditRent.value);
+  }
   saveAll(); closeCarEdit(); render();
 };
 
 /* ========= Cars UI ========= */
 const carName=document.getElementById('carName');
+const carRentInput=document.getElementById('carRent');
+const carTankInput=document.getElementById('carTank');
 const classButtons=document.getElementById('classButtons');
 let newCarClass='Эконом';
 classButtons.querySelectorAll('button').forEach(b=>{
-  b.onclick=()=>{ newCarClass=b.dataset.cls; classButtons.querySelectorAll('button').forEach(x=>x.classList.remove('primary')); b.classList.add('primary'); };
+  b.onclick=()=>{
+    newCarClass=b.dataset.cls;
+    classButtons.querySelectorAll('button').forEach(x=>x.classList.remove('primary'));
+    b.classList.add('primary');
+  };
 });
+const defaultClassBtn=classButtons.querySelector('button[data-cls="Эконом"]');
+if(defaultClassBtn) defaultClassBtn.classList.add('primary');
 const addCarBtn=document.getElementById('addCarBtn');
 const carsContainer=document.getElementById('carsContainer');
 
 function renderCars(){
   const items = APP.cars.map(c=>`
     <div class="car-item">
-      <div><b>${c.name}</b> · <span style="color:var(--muted)">${c.cls||'-'}</span> · бак ${c.tank||'-'} л</div>
+      <div><b>${c.name}</b> · <span style="color:var(--muted)">${c.cls||'-'}</span> · бак ${c.tank||'-'} л · аренда ${rub(c.rentPerDay||0)} / сутки</div>
       <div class="car-actions">
         <button class="mini" data-edit="${c.id}">⚙️</button>
         <button class="mini ${APP.activeCarId===c.id?'primary':''}" data-car="${c.id}">${APP.activeCarId===c.id?'Активно':'Выбрать'}</button>
@@ -263,20 +447,47 @@ addCarBtn.onclick=()=>{
   const name=(carName.value||'').trim();
   if(!name) return alert('Укажи название авто');
   const id=crypto.randomUUID();
-  APP.cars.push({id,name,cls:newCarClass,tank:50});
+  const rentPerDay=safeMoney(carRentInput && carRentInput.value!==undefined ? carRentInput.value : 0);
+  const tankRaw=carTankInput && carTankInput.value!==undefined && carTankInput.value!=='' ? carTankInput.value : 50;
+  APP.cars.push({id,name,cls:newCarClass,tank:clampTank(tankRaw),rentPerDay});
   APP.dataByCar[id]={};
   APP.activeCarId=id;
-  carName.value=''; newCarClass='Эконом';
+  carName.value='';
+  if(carRentInput) carRentInput.value='';
+  if(carTankInput) carTankInput.value='';
+  newCarClass='Эконом';
   classButtons.querySelectorAll('button').forEach(x=>x.classList.remove('primary'));
+  if(defaultClassBtn) defaultClassBtn.classList.add('primary');
   saveAll(); render();
 };
 
 /* ========= Settings (commission & tax) ========= */
 function bindSettingsRadios(){
+  const park = APP.settings.park;
   document.querySelectorAll('input[name="park"]').forEach(r=>{
-    r.checked = (APP.settings.parkMode===r.value);
-    r.onchange = ()=>{ APP.settings.parkMode=r.value; saveAll(); render(); };
+    r.checked = (park.mode===r.value);
+    r.onchange = ()=>{ park.mode=r.value; saveAll(); render(); };
   });
+
+  const bindParkInput = (input, key, isPercent=false) => {
+    if(!input) return;
+    const value = park[key];
+    input.value = isPercent ? Number(value).toString() : Math.round(Number(value)||0);
+    input.onchange = ()=>{
+      const raw = input.value;
+      const num = isPercent ? parseFloat(raw) : Math.round(Number(raw));
+      const safe = Number.isFinite(num) ? Math.max(0, num) : 0;
+      park[key] = safe;
+      input.value = isPercent ? safe : Math.round(safe);
+      saveAll();
+      render();
+    };
+  };
+
+  bindParkInput(parkDayInput, 'dayFee');
+  bindParkInput(parkOrderInput, 'orderFee');
+  bindParkInput(parkPercentInput, 'percent', true);
+
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
     r.checked = (APP.settings.taxMode===r.value);
     r.onchange = ()=>{ APP.settings.taxMode=r.value; saveAll(); render(); };
@@ -287,7 +498,7 @@ function bindSettingsRadios(){
 
     // Подождём, чтобы гарантированно очистилось, и создадим seed-данные заново
    setTimeout(() => {
-  APP = loadAll();   // создаём демо данные
+  APP = normalizeApp(loadAll());   // создаём демо данные
   saveAll();
 
   // выставляем дату последнего дня демо, чтобы график не был пуст
@@ -306,24 +517,26 @@ function bindSettingsRadios(){
 
 /* ========= Calculations ========= */
 function calcCommission(d){ // парк
-  const mode = APP.settings.parkMode || 'none';
+  const settings = (d && d.settings) ? d.settings : currentSettingsSnapshot();
+  const park = settings.park || {};
+  const mode = park.mode || 'none';
   if(mode==='none') return 0;
-  if(mode==='150day'){
-    return ( (d.income||0) > 0 || (d.orders||0) > 0 ) ? 150 : 0;
+  if(mode==='day'){
+    return ((d.income||0) > 0 || (d.orders||0) > 0) ? park.dayFee : 0;
   }
-  if(mode==='15order'){ return (d.orders||0) * 15; }
-  if(mode==='20order'){ return (d.orders||0) * 20; }
-  if(mode==='4pct'){ return (d.income||0) * 0.04; } // с дохода (без чаевых/прочих доходов)
+  if(mode==='order'){ return (d.orders||0) * park.orderFee; }
+  if(mode==='percent'){ return (d.income||0) * (park.percent/100); } // с дохода (без чаевых/прочих доходов)
   return 0;
 }
 function calcTax(d){
-  const mode = APP.settings.taxMode || 'none';
+  const settings = (d && d.settings) ? d.settings : currentSettingsSnapshot();
+  const mode = settings.taxMode || 'none';
   if(mode==='self4') return (d.income||0) * 0.04;
   if(mode==='ip6')   return (d.income||0) * 0.06;
   return 0;
 }
 function calcDay(iso){
-  const d = ensureDay(iso);
+  const d = readDay(iso);
   const gross = (d.income||0) + (d.tips||0) + (d.otherIncome||0);
   const commission = calcCommission(d);
   const tax = calcTax(d);
@@ -334,8 +547,10 @@ function calcDay(iso){
   return {...d, commission, tax, gross, costs, profit, eff, perHour};
 }
 function sumRange(arr){
+  const store = byCar();
   return arr.reduce((acc,iso)=>{
-    const d = ensureDay(iso);
+    const d = store[iso];
+    if(!d) return acc;
     const c = calcCommission(d);
     const t = calcTax(d);
     acc.orders += Number(d.orders||0);

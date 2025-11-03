@@ -95,13 +95,17 @@
 <div class="section">Автомобили</div>
 <div class="list">
 <div class="row">
-<div class="inline">
+<div class="car-form">
 <input id="carName" placeholder="Название авто (напр. Solaris)" style="padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:#0f0f10;color:#fff"/>
 <div class="inline" id="classButtons">
 <button class="mini" data-cls="Эконом">Эконом</button>
 <button class="mini" data-cls="Комфорт">Комфорт</button>
 <button class="mini" data-cls="Комфорт+">Комфорт+</button>
 <button class="mini" data-cls="Бизнес">Бизнес</button>
+</div>
+<div class="car-meta">
+<input id="carRent" min="0" placeholder="Аренда за сутки" step="50" type="number"/>
+<input id="carTank" max="120" min="20" placeholder="Объём бака" step="1" type="number"/>
 </div>
 </div>
 <button class="mini primary" id="addCarBtn">Добавить</button>
@@ -110,11 +114,21 @@
 </div>
 <div class="section">Система комиссий парка</div>
 <div class="list">
-<div class="row"><label class="radio"><input name="park" type="radio" value="none"/> <span>Без парка / Без комиссии</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="150day"/> <span>150 ₽ за рабочие сутки</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="15order"/> <span>15 ₽ с заказа (регионы)</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="20order"/> <span>20 ₽ с заказа (МСК/СПб)</span></label></div>
-<div class="row"><label class="radio"><input name="park" type="radio" value="4pct"/> <span>4% с дохода</span></label></div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="none"/> <span>Без парка / Без комиссии</span></label>
+        </div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="day"/> <span>Фикс за смену</span></label>
+          <div class="option-input"><input id="parkDayValue" min="0" step="10" type="number"/> <span>₽ за рабочие сутки</span></div>
+        </div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="order"/> <span>С заказа</span></label>
+          <div class="option-input"><input id="parkOrderValue" min="0" step="1" type="number"/> <span>₽ за заказ</span></div>
+        </div>
+        <div class="row park-option">
+          <label class="radio"><input name="park" type="radio" value="percent"/> <span>Процент с дохода</span></label>
+          <div class="option-input"><input id="parkPercentValue" min="0" step="0.1" type="number"/> <span>% с дохода</span></div>
+        </div>
 </div>
 <div class="section">Налогообложение</div>
 <div class="list">
@@ -174,6 +188,8 @@
 </select>
 <label>Объём бака (л)</label>
 <input id="carEditTank" max="120" min="20" placeholder="50" step="1" type="number"/>
+<label>Аренда за сутки (₽)</label>
+<input id="carEditRent" min="0" placeholder="0" step="50" type="number"/>
 </div>
 <div class="actions">
 <button class="btn ghost" id="carEditCancel">Отмена</button>
