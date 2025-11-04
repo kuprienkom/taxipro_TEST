@@ -485,10 +485,53 @@ function attachModalInput(input, getContext){
     input.dataset.modalBound = '1';
     input.readOnly = true;
     input.classList.add('modal-trigger');
-    input.addEventListener('pointerdown', (ev)=>{
-      ev.preventDefault();
+    let touchSession = null;
+
+    const triggerModal = (ev) => {
+      if (ev) ev.preventDefault();
       const ctx = getContext && getContext();
       if (ctx) openModal(ctx);
+    };
+
+    input.addEventListener('pointerdown', (ev)=>{
+      if (ev.pointerType === 'touch') {
+        touchSession = {
+          id: ev.pointerId,
+          x: ev.clientX,
+          y: ev.clientY,
+          moved: false
+        };
+      } else {
+        touchSession = null;
+      }
+    });
+
+    input.addEventListener('pointermove', (ev)=>{
+      if (!touchSession || ev.pointerId !== touchSession.id) return;
+      const dx = Math.abs(ev.clientX - touchSession.x);
+      const dy = Math.abs(ev.clientY - touchSession.y);
+      if (dx > 8 || dy > 8) {
+        touchSession.moved = true;
+      }
+    });
+
+    input.addEventListener('pointerup', (ev)=>{
+      if (ev.pointerType === 'touch') {
+        if (touchSession && ev.pointerId === touchSession.id && !touchSession.moved) {
+          triggerModal(ev);
+        }
+        touchSession = null;
+      } else {
+        triggerModal(ev);
+      }
+    });
+
+    input.addEventListener('pointercancel', ()=>{
+      touchSession = null;
+    });
+
+    input.addEventListener('click', (ev)=>{
+      ev.preventDefault();
     });
     input.addEventListener('keydown', (ev)=>{
       if (ev.key==='Enter' || ev.key===' ' || ev.key==='Space' || ev.key==='Spacebar') {
