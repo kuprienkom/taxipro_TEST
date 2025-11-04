@@ -595,7 +595,7 @@ function openDayModal(field, title){
     value: current,
     quick,
     quickLabel,
-    quickMode: isManual ? 'set' : 'add',
+    quickMode: 'add',
     sanitize,
     allowNull: isManual,
     placeholder,
@@ -629,6 +629,7 @@ function sanitizePercentValue(value){
 
 function attachModalInput(input, getContext){
   if (!input) return;
+  input._modalGetContext = getContext;
   if (!input.dataset.modalBound) {
     input.dataset.modalBound = '1';
     input.readOnly = true;
@@ -637,7 +638,8 @@ function attachModalInput(input, getContext){
 
     const triggerModal = (ev) => {
       if (ev) ev.preventDefault();
-      const ctx = getContext && getContext();
+      const ctxGetter = input._modalGetContext;
+      const ctx = ctxGetter && ctxGetter();
       if (ctx) openModal(ctx);
     };
 
@@ -705,7 +707,8 @@ function attachModalInput(input, getContext){
     input.addEventListener('keydown', (ev)=>{
       if (ev.key==='Enter' || ev.key===' ' || ev.key==='Space' || ev.key==='Spacebar') {
         ev.preventDefault();
-        const ctx = getContext && getContext();
+        const ctxGetter = input._modalGetContext;
+        const ctx = ctxGetter && ctxGetter();
         if (ctx) openModal(ctx);
       }
     });
@@ -771,7 +774,7 @@ if (carRentInput) {
     step: 50,
     quick: [500,1000,2000,3000],
     quickLabel: quickLabelRub,
-    quickMode: 'set',
+    quickMode: 'add',
     sanitize: sanitizeMoneyValue,
     onSave:(value)=>{ carRentInput.value = value; }
   }));
@@ -893,7 +896,7 @@ function bindSettingsRadios(){
     quickLabel: quickLabelRub,
     sanitize: sanitizeMoneyValue,
     step: 10,
-    quickMode: 'set'
+    quickMode: 'add'
   });
   bindParkInput(parkOrderInput, 'orderFee', {
     title: 'С заказа',
@@ -901,7 +904,7 @@ function bindSettingsRadios(){
     quickLabel: quickLabelRub,
     sanitize: sanitizeMoneyValue,
     step: 5,
-    quickMode: 'set'
+    quickMode: 'add'
   });
   bindParkInput(parkPercentInput, 'percent', {
     title: 'Процент с дохода',
@@ -914,7 +917,7 @@ function bindSettingsRadios(){
     },
     step: 0.1,
     inputMode: 'decimal',
-    quickMode: 'set'
+    quickMode: 'add'
   });
 
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
