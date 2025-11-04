@@ -896,7 +896,7 @@ function bindSettingsRadios(){
     quickLabel: quickLabelRub,
     sanitize: sanitizeMoneyValue,
     step: 10,
-    quickMode: 'set'
+    quickMode: 'add'
   });
   bindParkInput(parkOrderInput, 'orderFee', {
     title: 'С заказа',
@@ -904,7 +904,7 @@ function bindSettingsRadios(){
     quickLabel: quickLabelRub,
     sanitize: sanitizeMoneyValue,
     step: 5,
-    quickMode: 'set'
+    quickMode: 'add'
   });
   bindParkInput(parkPercentInput, 'percent', {
     title: 'Процент с дохода',
@@ -917,7 +917,7 @@ function bindSettingsRadios(){
     },
     step: 0.1,
     inputMode: 'decimal',
-    quickMode: 'set'
+    quickMode: 'add'
   });
 
   document.querySelectorAll('input[name="tax"]').forEach(r=>{
