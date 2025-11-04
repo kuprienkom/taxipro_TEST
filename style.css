@@ -95,11 +95,25 @@
 
   /* Settings extras */
   .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .car-form{display:flex;flex-direction:column;gap:8px;flex:1}
+  .car-meta{display:flex;gap:8px;flex-wrap:wrap}
+  .car-meta input{flex:1;min-width:130px;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#0f0f10;color:var(--text);font-size:14px}
+  .modal-trigger{cursor:pointer;-moz-appearance:textfield}
+  .modal-trigger:read-only{cursor:pointer}
+  .modal-trigger::-webkit-inner-spin-button,
+  .modal-trigger::-webkit-outer-spin-button{margin:0;-webkit-appearance:none}
   .radio{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid rgba(255,255,255,.06);padding:8px 10px;border-radius:12px;cursor:pointer}
   .radio input{accent-color:#ffc107}
+  .park-option{gap:12px;align-items:center;flex-wrap:wrap}
+  .park-option .option-input{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .park-option .option-input input{width:90px;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#0f0f10;color:var(--text);font-size:14px}
+  .park-option .option-input span{white-space:nowrap}
   .car-list{display:grid;gap:8px}
-  .car-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px}
-  .car-actions{display:flex;gap:8px}
+  .car-item{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:12px}
+  .car-info{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:14px}
+  .car-info b{font-size:15px}
+  .car-class{color:var(--muted)}
+  .car-actions{display:flex;gap:8px;flex:0 0 auto}
   .mini{padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:var(--panel2);color:var(--text);cursor:pointer}
   .mini.primary{background:linear-gradient(180deg,var(--accent2),var(--accent));color:#1a1a1a;border:none}
 
