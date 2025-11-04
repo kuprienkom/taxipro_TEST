@@ -56,8 +56,8 @@
 </div>
 <div class="group-title">📊 Итого</div>
 <div class="cards">
-<div class="card readonly"><h3 id="cCommission">0 ₽</h3><p>Комиссия парка</p></div>
-<div class="card readonly"><h3 id="cTax">0 ₽</h3><p>Налог</p></div>
+<div class="card" data-edit="commissionManual"><h3 id="cCommission">0 ₽</h3><p>Комиссия парка</p></div>
+<div class="card" data-edit="taxManual"><h3 id="cTax">0 ₽</h3><p>Налог</p></div>
 <div class="card readonly"><h3 id="cProfit">0 ₽</h3><p>Чистая прибыль</p></div>
 <div class="card readonly"><h3 id="cEff">0%</h3><p>Эффективность</p></div>
 </div>
@@ -70,7 +70,7 @@
 <div class="row"><div>Доля аренды</div><span class="pill warn" id="rentPct">0%</span></div>
 <div class="row"><div>Доля топлива</div><span class="pill ok" id="fuelPct">0%</span></div>
 </div>
-<footer>🚕 Такси Анализатор v1.3 beta</footer>
+<footer>🚕 TaxiPro v1.4.4</footer>
 </div>
 <!-- REPORTS -->
 <div class="hidden" id="screen-reports">
@@ -138,6 +138,10 @@
 <div class="section">Прочее</div>
 <div class="list">
 <div class="row">
+<div>Демо-режим</div>
+<button class="mini" id="demoBtn">Загрузить</button>
+</div>
+<div class="row">
 <div>Сброс данных</div>
 <button class="mini" id="resetBtn">Очистить</button>
 </div>
@@ -160,6 +164,7 @@
 </div>
 </div>
 </div>
+<div aria-live="polite" class="toast" id="toast"></div>
 <!-- MODALS -->
 <div class="modal-bg" id="modalBg">
 <div class="modal">
@@ -193,6 +198,18 @@
 <div class="actions">
 <button class="btn ghost" id="carEditCancel">Отмена</button>
 <button class="btn primary" id="carEditSave">Сохранить</button>
+</div>
+</div>
+</div>
+<div class="modal-bg" id="confirmBg">
+<div class="modal">
+<header><b id="confirmTitle">Подтверждение</b></header>
+<div class="body">
+<p id="confirmMessage"></p>
+</div>
+<div class="actions">
+<button class="btn ghost" id="confirmCancel">Отмена</button>
+<button class="btn primary" id="confirmOk">Продолжить</button>
 </div>
 </div>
 </div>
