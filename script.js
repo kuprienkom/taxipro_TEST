@@ -27,7 +27,7 @@ function createEmptyApp() {
     activeCarId: null,
     cars: [],
     settings: {
-      park: { mode: 'none' },
+      park: { mode: 'none', dayFee: 0, orderFee: 0, percent: 0 },
       taxMode: 'none'
     },
     dataByCar: {}
@@ -44,7 +44,7 @@ function createDemoApp() {
     seedData[d] = {
       orders: 18 + (i % 5),
       income: 5500 + (i % 4) * 400,
-      rent: 2700,
+      rent: 2800,
       fuel: 1000 + (i % 3) * 100,
       tips: 100 + (i % 2) * 30,
       otherIncome: 0,
@@ -60,7 +60,7 @@ function createDemoApp() {
     seedData[d] = {
       orders: 16 + (i % 7),
       income: 6200 + (i % 5) * 350,
-      rent: 2790,
+      rent: 2800,
       fuel: 1100 + (i % 4) * 120,
       tips: 120 + (i % 3) * 20,
       otherIncome: (i % 10 === 0) ? 500 : 0,
@@ -76,7 +76,7 @@ function createDemoApp() {
     seedData[d] = {
       orders: 15 + (i % 5),
       income: 5800 + (i % 3) * 400,
-      rent: 2790,
+      rent: 2800,
       fuel: 1300 + (i % 2) * 100,
       tips: 150 + (i % 2) * 50,
       otherIncome: (i % 5 === 0) ? 400 : 0,
@@ -88,7 +88,7 @@ function createDemoApp() {
 
   return {
     activeCarId: carId,
-    cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50, rentPerDay: 2700 }],
+    cars: [{ id: carId, name: 'Тигго4', cls: 'Комфорт', tank: 50, rentPerDay: 2800 }],
     settings: {
       park: { mode: 'day', dayFee: 150, orderFee: 15, percent: 4 },
       taxMode: 'none'
