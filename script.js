@@ -232,11 +232,6 @@ function normalizeApp(app){
     };
   });
 
-  if (app.cars.length === 0) {
-    const id = crypto.randomUUID ? crypto.randomUUID() : `car-${Date.now()}`;
-    app.cars.push({ id, name: 'Новая машина', cls: 'Эконом', tank: 50, rentPerDay: 0 });
-  }
-
   app.dataByCar = app.dataByCar || {};
   app.cars.forEach(car => {
     if (!app.dataByCar[car.id]) app.dataByCar[car.id] = {};
@@ -276,9 +271,17 @@ let currentScreen='home';
 let currentPeriod='day';
 let currentDate=todayISO();
 
-const byCar = () => APP.dataByCar[APP.activeCarId] || (APP.dataByCar[APP.activeCarId]={});
+const byCar = () => {
+  if (!APP.activeCarId) return null;
+  if (!APP.dataByCar[APP.activeCarId]) APP.dataByCar[APP.activeCarId] = {};
+  return APP.dataByCar[APP.activeCarId];
+};
 function getDayData(iso, create=false){
   const store = byCar();
+  if (!store) {
+    const snapshot = cloneSnapshot(currentSettingsSnapshot());
+    return {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,commissionManual:null,taxManual:null,settings:snapshot};
+  }
   let d = store[iso];
   if (d) {
     if (applyAutoRent(d)) saveAll();
@@ -292,7 +295,10 @@ function getDayData(iso, create=false){
   store[iso] = d;
   return d;
 }
-const ensureDay = (iso) => getDayData(iso, true);
+const ensureDay = (iso) => {
+  if (!APP.activeCarId) return null;
+  return getDayData(iso, true);
+};
 const readDay = (iso) => getDayData(iso, false);
 
 /* ========= DOM refs ========= */
@@ -335,6 +341,67 @@ const reportsBody=document.getElementById('reportsBody');
 const parkDayInput = document.getElementById('parkDayValue');
 const parkOrderInput = document.getElementById('parkOrderValue');
 const parkPercentInput = document.getElementById('parkPercentValue');
+
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+
+const confirmBg = document.getElementById('confirmBg');
+const confirmTitle = document.getElementById('confirmTitle');
+const confirmMessage = document.getElementById('confirmMessage');
+const confirmCancel = document.getElementById('confirmCancel');
+const confirmOk = document.getElementById('confirmOk');
+let confirmKeyHandler = null;
+
+function showToast(message, duration = 2600) {
+  if (!toastEl) return;
+  toastEl.textContent = message;
+  toastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.classList.remove('show');
+  }, duration);
+}
+
+function showConfirm(message, options = {}) {
+  return new Promise((resolve) => {
+    confirmTitle.textContent = options.title || 'Подтверждение';
+    confirmMessage.textContent = message;
+    confirmOk.textContent = options.okLabel || 'Продолжить';
+    confirmCancel.textContent = options.cancelLabel || 'Отмена';
+    confirmBg.classList.add('show');
+
+    const cleanup = (result) => {
+      confirmBg.classList.remove('show');
+      confirmOk.onclick = null;
+      confirmCancel.onclick = null;
+      confirmBg.removeEventListener('click', onBgClick);
+      if (confirmKeyHandler) {
+        document.removeEventListener('keydown', confirmKeyHandler);
+        confirmKeyHandler = null;
+      }
+      resolve(result);
+    };
+
+    const onBgClick = (e) => {
+      if (e.target === confirmBg) cleanup(false);
+    };
+
+    confirmOk.onclick = () => cleanup(true);
+    confirmCancel.onclick = () => cleanup(false);
+    confirmBg.addEventListener('click', onBgClick);
+
+    confirmKeyHandler = (e) => {
+      if (e.key === 'Escape') {
+        cleanup(false);
+      }
+    };
+    document.addEventListener('keydown', confirmKeyHandler);
+
+    setTimeout(() => {
+      confirmOk.focus();
+    }, 0);
+  });
+}
 
 /* ========= Modal (edit values) ========= */
 const modalBg = document.getElementById('modalBg');
@@ -481,6 +548,10 @@ btnSave.onclick=()=>{
 };
 
 function openDayModal(field, title){
+  if (!APP.activeCarId) {
+    showToast('Добавьте авто в настройках, чтобы вносить данные.');
+    return;
+  }
   const day = ensureDay(currentDate);
   const manualFields = new Set(['commissionManual','taxManual']);
   const isManual = manualFields.has(field);
@@ -735,13 +806,18 @@ function renderCars(){
     b.onclick=()=>{ APP.activeCarId=b.dataset.car; saveAll(); render(); };
   });
   carsContainer.querySelectorAll('button[data-del]').forEach(b=>{
-    b.onclick=()=>{
+    b.onclick=async ()=>{
       const id=b.dataset.del;
-      if(APP.cars.length===1){ alert('Нельзя удалить единственную машину'); return; }
+      const car=APP.cars.find(x=>x.id===id);
+      const ok = await showConfirm(`Удалить авто «${car ? car.name : 'Без названия'}» и все связанные данные?`, { okLabel: 'Удалить' });
+      if(!ok) return;
       APP.cars=APP.cars.filter(x=>x.id!==id);
       delete APP.dataByCar[id];
-      if(APP.activeCarId===id) APP.activeCarId=APP.cars[0].id;
-      saveAll(); render();
+      if(APP.activeCarId===id) APP.activeCarId=APP.cars[0]?APP.cars[0].id:null;
+      if(!APP.activeCarId) currentDate=todayISO();
+      saveAll();
+      render();
+      showToast('Авто удалено.');
     };
   });
   carsContainer.querySelectorAll('button[data-edit]').forEach(b=>{
@@ -750,7 +826,7 @@ function renderCars(){
 }
 addCarBtn.onclick=()=>{
   const name=(carName.value||'').trim();
-  if(!name) return alert('Укажи название авто');
+  if(!name) { showToast('Укажи название авто.'); return; }
   const id=crypto.randomUUID();
   const rentPerDay=safeMoney(carRentInput && carRentInput.value!==undefined ? carRentInput.value : 0);
   const tankRaw=carTankInput && carTankInput.value!==undefined && carTankInput.value!=='' ? carTankInput.value : 50;
@@ -764,6 +840,7 @@ addCarBtn.onclick=()=>{
   classButtons.querySelectorAll('button').forEach(x=>x.classList.remove('primary'));
   if(defaultClassBtn) defaultClassBtn.classList.add('primary');
   saveAll(); render();
+  showToast('Авто добавлено.');
 };
 
 /* ========= Settings (commission & tax) ========= */
@@ -846,27 +923,29 @@ function bindSettingsRadios(){
   });
   const resetBtn = document.getElementById('resetBtn');
   if (resetBtn) {
-    resetBtn.onclick = () => {
-      if (!confirm('Сбросить все локальные данные? Все данные будут безвозвратно удалены.')) return;
+    resetBtn.onclick = async () => {
+      const ok = await showConfirm('Сбросить все локальные данные? Все данные будут безвозвратно удалены.', { okLabel: 'Очистить' });
+      if (!ok) return;
       APP = normalizeApp(createEmptyApp());
       saveAll();
       currentPeriod = 'day';
       jumpToLatestDate();
       render();
-      alert('✅ Данные очищены.');
+      showToast('Данные очищены.');
     };
   }
 
   const demoBtn = document.getElementById('demoBtn');
   if (demoBtn) {
-    demoBtn.onclick = () => {
-      if (!confirm('Сбросить все локальные данные и загрузить демо-пример?')) return;
+    demoBtn.onclick = async () => {
+      const ok = await showConfirm('Сбросить все локальные данные и загрузить демо-пример? Все текущие записи будут удалены.', { okLabel: 'Загрузить' });
+      if (!ok) return;
       APP = normalizeApp(createDemoApp());
       saveAll();
       currentPeriod = 'day';
       jumpToLatestDate();
       render();
-      alert('✅ Демо-режим активирован.');
+      showToast('Демо-режим активирован.');
     };
   }
 
@@ -935,6 +1014,9 @@ function calcDay(iso){
 }
 function sumRange(arr){
   const store = byCar();
+  if (!store) {
+    return {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,commission:0,tax:0};
+  }
   let dirty = false;
   const summary = arr.reduce((acc,iso)=>{
     const d = store[iso];
@@ -1414,8 +1496,10 @@ navbtns.forEach(n=>n.addEventListener('click',()=>{
 // date
 dateInput.addEventListener('change', (e)=>{
   currentDate = e.target.value || todayISO();
-  ensureDay(currentDate);
-  saveAll();
+  if (APP.activeCarId) {
+    ensureDay(currentDate);
+    saveAll();
+  }
   tabs.forEach(x=>x.classList.remove('active'));
   document.querySelector('.tab[data-period="day"]').classList.add('active');
   currentPeriod='day';
@@ -1428,6 +1512,10 @@ document.querySelectorAll('.card[data-edit]').forEach(c=>{
       tabs.forEach(x=>x.classList.remove('active'));
       document.querySelector('.tab[data-period="day"]').classList.add('active');
       currentPeriod='day';
+    }
+    if(!APP.activeCarId){
+      showToast('Добавьте авто в настройках, чтобы вносить данные.');
+      return;
     }
     const field=c.dataset.edit;
     const titles={
@@ -1451,8 +1539,8 @@ rTabs.forEach(rt=>rt.addEventListener('click',()=>{
  // ===== Отчёт по диапазону =====
  rangeBtn.onclick = () => {
    const from = fromDate.value, to = toDate.value;
-   if (!from || !to) { alert('Укажите обе даты'); return; }
-   if (from > to) { alert('Дата начала позже даты окончания'); return; }
+   if (!from || !to) { showToast('Укажите обе даты.'); return; }
+   if (from > to) { showToast('Дата начала позже даты окончания.'); return; }
 
    const arr = []; let cur = new Date(from); const end = new Date(to);
    while (cur <= end) { arr.push(cur.toLocaleDateString('en-CA')); cur.setDate(cur.getDate() + 1); }
