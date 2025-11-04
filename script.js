@@ -499,7 +499,8 @@ function attachModalInput(input, getContext){
           id: ev.pointerId,
           x: ev.clientX,
           y: ev.clientY,
-          moved: false
+          moved: false,
+          triggered: false
         };
       } else {
         touchSession = null;
@@ -510,20 +511,26 @@ function attachModalInput(input, getContext){
       if (!touchSession || ev.pointerId !== touchSession.id) return;
       const dx = Math.abs(ev.clientX - touchSession.x);
       const dy = Math.abs(ev.clientY - touchSession.y);
-      if (dx > 8 || dy > 8) {
+      if (dx > 14 || dy > 14) {
         touchSession.moved = true;
       }
     });
 
     input.addEventListener('pointerup', (ev)=>{
       if (ev.pointerType === 'touch') {
-        if (touchSession && ev.pointerId === touchSession.id && !touchSession.moved) {
+        if (!touchSession || ev.pointerId !== touchSession.id) {
+          touchSession = null;
+          return;
+        }
+        if (!touchSession.moved) {
+          touchSession.triggered = true;
           triggerModal(ev);
         }
-        touchSession = null;
-      } else {
-        triggerModal(ev);
+        // keep the session for the ensuing click event so it can acknowledge the trigger
+        // and avoid reopening; it will be cleared in the click handler.
+        return;
       }
+      triggerModal(ev);
     });
 
     input.addEventListener('pointercancel', ()=>{
@@ -532,6 +539,20 @@ function attachModalInput(input, getContext){
 
     input.addEventListener('click', (ev)=>{
       ev.preventDefault();
+      if (touchSession) {
+        if (touchSession.moved) {
+          touchSession = null;
+          return;
+        }
+        if (touchSession.triggered) {
+          touchSession = null;
+          return;
+        }
+        triggerModal(ev);
+        touchSession = null;
+        return;
+      }
+      triggerModal(ev);
     });
     input.addEventListener('keydown', (ev)=>{
       if (ev.key==='Enter' || ev.key===' ' || ev.key==='Space' || ev.key==='Spacebar') {
