@@ -847,7 +847,7 @@ function bindSettingsRadios(){
   const resetBtn = document.getElementById('resetBtn');
   if (resetBtn) {
     resetBtn.onclick = () => {
-      if (!confirm('Сбросить все локальные данные?')) return;
+      if (!confirm('Сбросить все локальные данные? Все данные будут безвозвратно удалены.')) return;
       APP = normalizeApp(createEmptyApp());
       saveAll();
       currentPeriod = 'day';
@@ -860,7 +860,7 @@ function bindSettingsRadios(){
   const demoBtn = document.getElementById('demoBtn');
   if (demoBtn) {
     demoBtn.onclick = () => {
-      if (!confirm('Включить демо-режим? Текущие данные будут заменены.')) return;
+      if (!confirm('Сбросить все локальные данные и загрузить демо-пример?')) return;
       APP = normalizeApp(createDemoApp());
       saveAll();
       currentPeriod = 'day';
