@@ -22,11 +22,19 @@ const isoToShort = (iso)=>{const d=new Date(iso);return d.toLocaleDateString('ru
 ==================================== */
 const LS_KEY = 'taxiAnalyzerV13';
 
-function loadAll() {
-  const raw = localStorage.getItem(LS_KEY);
-  if (raw) return JSON.parse(raw);
+function createEmptyApp() {
+  return {
+    activeCarId: null,
+    cars: [],
+    settings: {
+      park: { mode: 'none' },
+      taxMode: 'none'
+    },
+    dataByCar: {}
+  };
+}
 
-  // === создаём демонстрационные данные ===
+function createDemoApp() {
   const carId = crypto.randomUUID();
   const seedData = {};
 
@@ -78,8 +86,7 @@ function loadAll() {
     };
   }
 
-  // === создаём объект приложения ===
-  const obj = {
+  return {
     activeCarId: carId,
     cars: [{ id: carId, name: 'Kia Rio', cls: 'Комфорт', tank: 50, rentPerDay: 2700 }],
     settings: {
@@ -88,9 +95,12 @@ function loadAll() {
     },
     dataByCar: { [carId]: seedData }
   };
+}
 
-  localStorage.setItem(LS_KEY, JSON.stringify(obj));
-  return obj;
+function loadAll() {
+  const raw = localStorage.getItem(LS_KEY);
+  if (raw) return JSON.parse(raw);
+  return createEmptyApp();
 }
 
 function saveAll() {
@@ -153,13 +163,15 @@ function sanitizeSettingsSnapshot(raw, fallbackSnapshot) {
 }
 
 function normalizeDayEntry(entry, fallbackSnapshot) {
-  const base = { orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0 };
+  const base = { orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,commissionManual:null,taxManual:null };
   const day = { ...base, ...(entry || {}) };
   DAY_FIELDS.forEach(key => {
     const num = Number(day[key]);
     day[key] = Number.isFinite(num) ? num : 0;
   });
   day.settings = sanitizeSettingsSnapshot(entry && entry.settings, fallbackSnapshot);
+  day.commissionManual = sanitizeOptionalMoney(day.commissionManual);
+  day.taxManual = sanitizeOptionalMoney(day.taxManual);
   return day;
 }
 
@@ -274,9 +286,9 @@ function getDayData(iso, create=false){
   }
   const snapshot = cloneSnapshot(currentSettingsSnapshot());
   if (!create) {
-    return {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,settings:snapshot};
+    return {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,commissionManual:null,taxManual:null,settings:snapshot};
   }
-  d = {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,settings:snapshot};
+  d = {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,commissionManual:null,taxManual:null,settings:snapshot};
   store[iso] = d;
   return d;
 }
@@ -344,9 +356,11 @@ const DAY_QUICK_PRESETS = {
   otherExpense: [100,300,500],
   fines: [500,1000,3000],
   orders: [1,5,10],
-  hours: [1,2,4]
+  hours: [1,2,4],
+  commissionManual: [200,500,1000,1500],
+  taxManual: [200,500,800,1200]
 };
-const DAY_MONEY_FIELDS = new Set(['income','otherIncome','tips','rent','fuel','otherExpense','fines']);
+const DAY_MONEY_FIELDS = new Set(['income','otherIncome','tips','rent','fuel','otherExpense','fines','commissionManual','taxManual']);
 
 const quickLabelRub = (val) => `+${fmt(val)} ₽`;
 const quickLabelPercent = (val) => `+${val}%`;
@@ -393,6 +407,8 @@ function openModal(context){
     parse: defaultParse,
     sanitize: (v)=>v,
     format: (v)=>v,
+    allowNull: false,
+    placeholder: null,
     ...context
   };
   modalOpenedAt = performance.now();
@@ -409,9 +425,19 @@ function openModal(context){
   } else {
     modalInput.removeAttribute('inputmode');
   }
+  if (modalContext.placeholder != null) {
+    modalInput.placeholder = modalContext.placeholder;
+  } else {
+    modalInput.placeholder = '0';
+  }
+  const hasNullValue = modalContext.allowNull && modalContext.value == null;
   const initialRaw = modalContext.value != null ? modalContext.value : 0;
-  const initial = modalContext.prepare ? modalContext.prepare(initialRaw) : modalContext.sanitize(initialRaw);
-  modalInput.value = modalContext.format ? modalContext.format(initial) : initial;
+  if (hasNullValue) {
+    modalInput.value = '';
+  } else {
+    const initial = modalContext.prepare ? modalContext.prepare(initialRaw) : modalContext.sanitize(initialRaw);
+    modalInput.value = modalContext.format ? modalContext.format(initial) : initial;
+  }
   renderQuickFromContext(modalContext);
   modalBg.classList.add('show');
   modalInput.focus();
@@ -433,19 +459,42 @@ modalBg.addEventListener('click',e=>{
 btnSave.onclick=()=>{
   if(!modalContext) return;
   const context = modalContext;
+  const raw = modalInput.value;
+  if (context.allowNull && (raw === '' || raw == null)) {
+    closeModal();
+    if (context.onSave) context.onSave(null);
+    return;
+  }
   const parser = context.parse || defaultParse;
-  let value = parser(modalInput.value||0);
+  let value = parser(raw || 0);
   if (!Number.isFinite(value)) value = context.fallback != null ? context.fallback : 0;
   if (context.min != null) value = Math.max(context.min, value);
   if (context.max != null) value = Math.min(context.max, value);
   value = context.sanitize ? context.sanitize(value) : value;
+  if (context.allowNull && value == null) {
+    closeModal();
+    if (context.onSave) context.onSave(null);
+    return;
+  }
   closeModal();
   if (context.onSave) context.onSave(value);
 };
 
 function openDayModal(field, title){
   const day = ensureDay(currentDate);
-  const current = Number(day[field]||0);
+  const manualFields = new Set(['commissionManual','taxManual']);
+  const isManual = manualFields.has(field);
+  let current = day[field];
+  if (isManual) {
+    if (current != null) {
+      const num = Number(current);
+      current = Number.isFinite(num) ? num : null;
+    } else {
+      current = null;
+    }
+  } else {
+    current = Number(day[field]||0);
+  }
   const quick = DAY_QUICK_PRESETS[field] || [];
   const isMoney = DAY_MONEY_FIELDS.has(field);
   const isOrders = field==='orders';
@@ -462,14 +511,29 @@ function openDayModal(field, title){
     else if (isOrders) quickLabel = (v)=>`+${v}`;
     else if (isHours) quickLabel = (v)=>`+${v} ч`;
   }
+  let placeholder = null;
+  if (isManual) {
+    const prev = day[field];
+    day[field] = null;
+    const auto = field === 'commissionManual' ? calcCommission(day) : calcTax(day);
+    placeholder = `Авто: ${rub(auto)}`;
+    day[field] = prev;
+  }
   openModal({
     title,
     value: current,
     quick,
     quickLabel,
+    quickMode: isManual ? 'set' : 'add',
     sanitize,
+    allowNull: isManual,
+    placeholder,
     onSave:(value)=>{
-      day[field]=value;
+      if (value == null && isManual) {
+        day[field] = null;
+      } else {
+        day[field]=value;
+      }
       applyAutoRent(day);
       saveAll();
       render();
@@ -478,6 +542,11 @@ function openDayModal(field, title){
 }
 
 function sanitizeMoneyValue(value){
+  return safeMoney(value);
+}
+
+function sanitizeOptionalMoney(value){
+  if (value === null || value === undefined || value === '') return null;
   return safeMoney(value);
 }
 
@@ -775,26 +844,31 @@ function bindSettingsRadios(){
     r.checked = (APP.settings.taxMode===r.value);
     r.onchange = ()=>{ APP.settings.taxMode=r.value; saveAll(); render(); };
   });
- document.getElementById('resetBtn').onclick = () => {
-  if (confirm('Сбросить все локальные данные и загрузить демо-пример?')) {
-    localStorage.removeItem(LS_KEY);
-
-    // Подождём, чтобы гарантированно очистилось, и создадим seed-данные заново
-   setTimeout(() => {
-  APP = normalizeApp(loadAll());   // создаём демо данные
-  saveAll();
-
-  // выставляем дату последнего дня демо, чтобы график не был пуст
-  currentDate = "2024-11-10";
-  currentPeriod = "day";
-
-  render();
-  alert('✅ Демо-данные успешно загружены. Открой график — данные за сентябрь, октябрь и ноябрь!');
-}, 150);
-
+  const resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      if (!confirm('Сбросить все локальные данные?')) return;
+      APP = normalizeApp(createEmptyApp());
+      saveAll();
+      currentPeriod = 'day';
+      jumpToLatestDate();
+      render();
+      alert('✅ Данные очищены.');
+    };
   }
-};
 
+  const demoBtn = document.getElementById('demoBtn');
+  if (demoBtn) {
+    demoBtn.onclick = () => {
+      if (!confirm('Включить демо-режим? Текущие данные будут заменены.')) return;
+      APP = normalizeApp(createDemoApp());
+      saveAll();
+      currentPeriod = 'day';
+      jumpToLatestDate();
+      render();
+      alert('✅ Демо-режим активирован.');
+    };
+  }
 
 }
 
@@ -822,6 +896,10 @@ function applyAutoRent(day) {
 }
 
 function calcCommission(d){ // парк
+  if (d && d.commissionManual != null) {
+    const manual = Number(d.commissionManual);
+    if (Number.isFinite(manual)) return Math.max(0, Math.round(manual));
+  }
   const settings = (d && d.settings) ? d.settings : currentSettingsSnapshot();
   const park = settings.park || {};
   const mode = park.mode || 'none';
@@ -834,6 +912,10 @@ function calcCommission(d){ // парк
   return 0;
 }
 function calcTax(d){
+  if (d && d.taxManual != null) {
+    const manual = Number(d.taxManual);
+    if (Number.isFinite(manual)) return Math.max(0, Math.round(manual));
+  }
   const settings = (d && d.settings) ? d.settings : currentSettingsSnapshot();
   const mode = settings.taxMode || 'none';
   if(mode==='self4') return (d.income||0) * 0.04;
@@ -875,6 +957,21 @@ function sumRange(arr){
   }, {orders:0,income:0,rent:0,fuel:0,tips:0,otherIncome:0,otherExpense:0,fines:0,hours:0,commission:0,tax:0});
   if (dirty) saveAll();
   return summary;
+}
+
+function jumpToLatestDate() {
+  const carId = APP.activeCarId;
+  if (!carId) {
+    currentDate = todayISO();
+    return;
+  }
+  const data = APP.dataByCar[carId] || {};
+  const dates = Object.keys(data).sort();
+  if (dates.length) {
+    currentDate = dates[dates.length - 1];
+  } else {
+    currentDate = todayISO();
+  }
 }
 
 /* ========= Timeline chart ========= */
@@ -1336,7 +1433,8 @@ document.querySelectorAll('.card[data-edit]').forEach(c=>{
     const titles={
       income:'Доход за день', tips:'Чаевые за день', otherIncome:'Прочие доходы за день',
       orders:'Количество заказов', rent:'Аренда за день', fuel:'Топливо за день',
-      otherExpense:'Прочие расходы за день', fines:'Штрафы за день', hours:'Часы за день'
+      otherExpense:'Прочие расходы за день', fines:'Штрафы за день', hours:'Часы за день',
+      commissionManual:'Комиссия парка (ручной ввод)', taxManual:'Налог (ручной ввод)'
     };
     openDayModal(field, titles[field]||'Изменить');
   });
