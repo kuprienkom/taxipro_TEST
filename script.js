@@ -333,6 +333,7 @@ const quickArea=document.getElementById('quickArea');
 const btnCancel=document.getElementById('btnCancel');
 const btnSave=document.getElementById('btnSave');
 let modalContext=null;
+let modalOpenedAt=0;
 
 const DAY_QUICK_PRESETS = {
   income: [1000,3000,5000],
@@ -394,6 +395,7 @@ function openModal(context){
     format: (v)=>v,
     ...context
   };
+  modalOpenedAt = performance.now();
   modalTitle.textContent = modalContext.title;
   modalLabel.textContent = modalContext.label;
   modalInput.type = modalContext.inputType || 'number';
@@ -421,7 +423,13 @@ function closeModal(){
   modalContext=null;
 }
 btnCancel.onclick=closeModal;
-modalBg.addEventListener('click',e=>{ if(e.target===modalBg) closeModal(); });
+modalBg.addEventListener('pointerdown',e=>{
+  if(e.target===modalBg) closeModal();
+});
+modalBg.addEventListener('click',e=>{
+  if(performance.now()-modalOpenedAt<200) return;
+  if(e.target===modalBg) closeModal();
+});
 btnSave.onclick=()=>{
   if(!modalContext) return;
   const context = modalContext;
